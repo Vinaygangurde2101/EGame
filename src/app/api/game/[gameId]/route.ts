@@ -29,44 +29,39 @@ export async function GET(req: Request, { params }: { params: { gameId: string }
     // Current active round
     const currentRound = game.rounds.find((r: { roundNumber: number }) => r.roundNumber === game.currentRound) || null;
 
-    // Participant details if provided
-    let participant = null;
-    let currentPosition = null;
-    let history: any[] = [];
-
-    if (participantId) {
-      participant = await db.participant.findUnique({
-        where: { id: participantId },
-        include: {
-          achievements: { include: { achievement: true } },
-        },
-      });
-
-      if (currentRound) {
-        currentPosition = await db.position.findUnique({
-          where: {
-            participantId_roundId: {
-              participantId,
-              roundId: currentRound.id,
+    // Parallel execution for participant data & leaderboard
+    const [participant, currentPosition, history, leaderboard] = await Promise.all([
+      participantId
+        ? db.participant.findUnique({
+            where: { id: participantId },
+            include: { achievements: { include: { achievement: true } } },
+          })
+        : Promise.resolve(null),
+      participantId && currentRound
+        ? db.position.findUnique({
+            where: {
+              participantId_roundId: {
+                participantId,
+                roundId: currentRound.id,
+              },
             },
-          },
-          include: { riskLevel: true },
-        });
-      }
-
-      // Fetch player trade history
-      history = await db.position.findMany({
-        where: { participantId },
-        include: {
-          round: { include: { question: true } },
-          riskLevel: true,
-          settlement: true,
-        },
-        orderBy: { submittedAt: 'desc' },
-      });
-    }
-
-    const leaderboard = await getGameLeaderboard(gameId);
+            include: { riskLevel: true },
+          })
+        : Promise.resolve(null),
+      participantId
+        ? db.position.findMany({
+            where: { participantId },
+            include: {
+              round: { include: { question: true } },
+              riskLevel: true,
+              settlement: true,
+            },
+            orderBy: { submittedAt: 'desc' },
+            take: 20,
+          })
+        : Promise.resolve([]),
+      getGameLeaderboard(game.id),
+    ]);
 
     // Sanitize question if market is live to avoid leaking correct answer
     let activeQuestion = currentRound?.question || null;

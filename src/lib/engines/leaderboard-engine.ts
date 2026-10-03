@@ -26,19 +26,34 @@ export async function getGameLeaderboard(gameId: string, currentRoundNumber?: nu
 
   const participants = await db.participant.findMany({
     where: { gameId: game.id },
-    include: {
+    select: {
+      id: true,
+      displayName: true,
+      avatar: true,
+      currentCapital: true,
+      startingCapital: true,
+      netPnL: true,
+      returnPercentage: true,
+      streakCount: true,
       settlements: {
-        include: { round: true },
+        select: {
+          result: true,
+          profitLoss: true,
+        },
         orderBy: { settledAt: 'desc' },
       },
-      achievements: true,
-      positions: true,
+      _count: {
+        select: {
+          achievements: true,
+          positions: true,
+        },
+      },
     },
   });
 
   // Calculate scores for each participant
   const entries = participants.map((p) => {
-    const totalPositions = p.positions.length;
+    const totalPositions = p._count.positions;
     const wins = p.settlements.filter((s) => s.result === 'WIN').length;
     const accuracy = totalPositions > 0 ? Math.round((wins / totalPositions) * 100) : 0;
 
@@ -59,7 +74,7 @@ export async function getGameLeaderboard(gameId: string, currentRoundNumber?: nu
       lastRoundPnL,
       accuracy,
       streakCount: p.streakCount,
-      achievementsCount: p.achievements.length,
+      achievementsCount: p._count.achievements,
       // Sorting key primary: currentCapital, secondary: netPnL, tertiary: accuracy
       sortKey: p.currentCapital * 1000 + p.netPnL + accuracy,
     };
