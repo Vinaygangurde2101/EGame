@@ -282,10 +282,14 @@ function QuestionManagerContent() {
   );
 }
 
+import AdminGuard from '@/components/AdminGuard';
+
 export default function QuestionManagerPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-mono text-xs">Loading questions...</div>}>
-      <QuestionManagerContent />
-    </Suspense>
+    <AdminGuard>
+      <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-mono text-xs">Loading questions...</div>}>
+        <QuestionManagerContent />
+      </Suspense>
+    </AdminGuard>
   );
 }

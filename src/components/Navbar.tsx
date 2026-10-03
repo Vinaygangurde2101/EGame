@@ -54,13 +54,30 @@ export default function Navbar({ gamePin, gameId, role = 'player', currentCapita
             </>
           )}
 
-          <Link
-            href="/admin"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-500/30 transition shadow-sm"
-          >
-            <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" />
-            Admin
-          </Link>
+          {role === 'admin' ? (
+            <button
+              onClick={async () => {
+                try {
+                  await fetch('/api/admin/auth/logout', { method: 'POST' });
+                } catch (e) {}
+                localStorage.removeItem('admin_authenticated');
+                window.location.href = '/admin';
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 border border-rose-500/40 transition shadow-sm"
+              title="Logout Admin Session"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+              Logout 🚪
+            </button>
+          ) : (
+            <Link
+              href="/admin"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-500/30 transition shadow-sm"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" />
+              Admin
+            </Link>
+          )}
         </div>
       </div>
     </header>

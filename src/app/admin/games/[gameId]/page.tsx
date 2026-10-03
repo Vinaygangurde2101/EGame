@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 import Navbar from '@/components/Navbar';
+import AdminGuard from '@/components/AdminGuard';
 import { formatINR } from '@/lib/engines/portfolio-engine';
 import {
   ShieldAlert,
@@ -18,6 +19,7 @@ import {
   PieChart,
   BarChart3,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 
 export default function AdminControlRoomPage({ params }: { params: { gameId: string } }) {
@@ -139,119 +141,147 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
     }
   };
 
+  const handleDeleteGame = async () => {
+    if (!window.confirm(`Are you sure you want to delete "${gameState?.name || 'this game'}"? All player positions and trade history will be permanently deleted.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/games?gameId=${gameId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        window.location.href = '/admin';
+      } else {
+        alert(data.error || 'Failed to delete game');
+      }
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
-      <Navbar gamePin={gameState?.gamePin} gameId={gameId} role="admin" />
+    <AdminGuard>
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
+        <Navbar gamePin={gameState?.gamePin} gameId={gameId} role="admin" />
 
-      <main className="max-w-7xl w-full mx-auto px-4 py-6 flex-1 space-y-6">
-        {/* STATS HEADER BAR */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
-            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Game Status</span>
-            <span className="text-sm font-mono font-bold text-emerald-400 mt-0.5 block">{gameState?.status || 'LOADING'}</span>
+        <main className="max-w-7xl w-full mx-auto px-4 py-6 flex-1 space-y-6">
+          {/* STATS HEADER BAR */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Game Status</span>
+              <span className="text-sm font-mono font-bold text-emerald-400 mt-0.5 block">{gameState?.status || 'LOADING'}</span>
+            </div>
+
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Current Round</span>
+              <span className="text-sm font-mono font-bold text-cyan-400 mt-0.5 block">
+                Round {gameState?.currentRound?.toString().padStart(2, '0')} / {gameState?.totalRounds?.toString().padStart(2, '0')}
+              </span>
+            </div>
+
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Traders Connected</span>
+              <span className="text-sm font-mono font-bold text-white mt-0.5 block flex items-center gap-1">
+                <Users className="w-3.5 h-3.5 text-cyan-400" /> {analytics?.totalParticipants || 0}
+              </span>
+            </div>
+
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Total Capital</span>
+              <span className="text-sm font-mono font-bold text-slate-200 mt-0.5 block">
+                {formatINR(analytics?.totalCapital || 0)}
+              </span>
+            </div>
+
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Capital Exposed</span>
+              <span className="text-sm font-mono font-bold text-amber-400 mt-0.5 block">
+                {formatINR(analytics?.capitalExposed || 0)}
+              </span>
+            </div>
+
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Exposure Ratio</span>
+              <span className="text-sm font-mono font-bold text-cyan-400 mt-0.5 block">
+                {analytics?.exposureRatio || 0}%
+              </span>
+            </div>
           </div>
 
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
-            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Current Round</span>
-            <span className="text-sm font-mono font-bold text-cyan-400 mt-0.5 block">
-              Round {gameState?.currentRound?.toString().padStart(2, '0')} / {gameState?.totalRounds?.toString().padStart(2, '0')}
-            </span>
+          {/* ADMIN ACTION CONTROL BAR */}
+          <div className="bg-slate-900/90 border border-cyan-500/40 rounded-3xl p-5 shadow-2xl backdrop-blur-md">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+              <h2 className="font-mono text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-cyan-400" /> Authoritative Market Action Bar
+              </h2>
+              {actionMessage && <span className="text-xs font-mono text-amber-400 animate-pulse">{actionMessage}</span>}
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleStartRound}
+                className="py-3 px-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+              >
+                <Play className="w-4 h-4 fill-slate-950" /> 1. START ROUND
+              </button>
+
+              <button
+                type="button"
+                disabled={loading || !currentRound}
+                onClick={handleLockMarket}
+                className="py-3 px-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+              >
+                <Lock className="w-4 h-4" /> 2. CLOSE MARKET
+              </button>
+
+              <button
+                type="button"
+                disabled={loading || !currentRound}
+                onClick={handleRevealAnswer}
+                className="py-3 px-3 bg-cyan-600 hover:bg-cyan-500 text-white font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+              >
+                <Eye className="w-4 h-4" /> 3. REVEAL ANSWER
+              </button>
+
+              <button
+                type="button"
+                disabled={loading || !currentRound}
+                onClick={handleSettleRound}
+                className="py-3 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-4 h-4" /> 4. SETTLE ROUND
+              </button>
+
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleStartRound}
+                className="py-3 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono font-bold text-xs rounded-xl border border-slate-700 flex items-center justify-center gap-1.5 transition"
+              >
+                <ArrowRight className="w-4 h-4 text-cyan-400" /> NEXT ROUND
+              </button>
+
+              <a
+                href={`/arena/${gameId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="py-3 px-3 bg-slate-950 hover:bg-slate-900 border border-slate-700 text-cyan-400 font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition"
+              >
+                <Tv className="w-4 h-4" /> ARENA TV
+              </a>
+
+              <button
+                type="button"
+                onClick={handleDeleteGame}
+                className="py-3 px-3 bg-rose-950/90 hover:bg-rose-900 border border-rose-500/50 text-rose-300 font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition"
+                title="Delete this championship game"
+              >
+                <Trash2 className="w-4 h-4 text-rose-400" /> DELETE GAME
+              </button>
+            </div>
           </div>
-
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
-            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Traders Connected</span>
-            <span className="text-sm font-mono font-bold text-white mt-0.5 block flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-cyan-400" /> {analytics?.totalParticipants || 0}
-            </span>
-          </div>
-
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
-            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Total Capital</span>
-            <span className="text-sm font-mono font-bold text-slate-200 mt-0.5 block">
-              {formatINR(analytics?.totalCapital || 0)}
-            </span>
-          </div>
-
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
-            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Capital Exposed</span>
-            <span className="text-sm font-mono font-bold text-amber-400 mt-0.5 block">
-              {formatINR(analytics?.capitalExposed || 0)}
-            </span>
-          </div>
-
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
-            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Exposure Ratio</span>
-            <span className="text-sm font-mono font-bold text-cyan-400 mt-0.5 block">
-              {analytics?.exposureRatio || 0}%
-            </span>
-          </div>
-        </div>
-
-        {/* ADMIN ACTION CONTROL BAR */}
-        <div className="bg-slate-900/90 border border-cyan-500/40 rounded-3xl p-5 shadow-2xl backdrop-blur-md">
-          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
-            <h2 className="font-mono text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-cyan-400" /> Authoritative Market Action Bar
-            </h2>
-            {actionMessage && <span className="text-xs font-mono text-amber-400 animate-pulse">{actionMessage}</span>}
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
-            <button
-              type="button"
-              disabled={loading}
-              onClick={handleStartRound}
-              className="py-3 px-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-            >
-              <Play className="w-4 h-4 fill-slate-950" /> 1. START ROUND
-            </button>
-
-            <button
-              type="button"
-              disabled={loading || !currentRound}
-              onClick={handleLockMarket}
-              className="py-3 px-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-            >
-              <Lock className="w-4 h-4" /> 2. CLOSE MARKET
-            </button>
-
-            <button
-              type="button"
-              disabled={loading || !currentRound}
-              onClick={handleRevealAnswer}
-              className="py-3 px-3 bg-cyan-600 hover:bg-cyan-500 text-white font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-            >
-              <Eye className="w-4 h-4" /> 3. REVEAL ANSWER
-            </button>
-
-            <button
-              type="button"
-              disabled={loading || !currentRound}
-              onClick={handleSettleRound}
-              className="py-3 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-            >
-              <CheckCircle2 className="w-4 h-4" /> 4. SETTLE ROUND
-            </button>
-
-            <button
-              type="button"
-              disabled={loading}
-              onClick={handleStartRound}
-              className="py-3 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono font-bold text-xs rounded-xl border border-slate-700 flex items-center justify-center gap-1.5 transition"
-            >
-              <ArrowRight className="w-4 h-4 text-cyan-400" /> NEXT ROUND
-            </button>
-
-            <a
-              href={`/arena/${gameId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="py-3 px-3 bg-slate-950 hover:bg-slate-900 border border-slate-700 text-cyan-400 font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition"
-            >
-              <Tv className="w-4 h-4" /> ARENA TV
-            </a>
-          </div>
-        </div>
 
         {/* ACTIVE QUESTION & ANALYTICS BREAKDOWN */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -355,5 +385,6 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
         </div>
       </main>
     </div>
-  );
+  </AdminGuard>
+);
 }

@@ -60,10 +60,14 @@ function AnalyticsContent() {
   );
 }
 
+import AdminGuard from '@/components/AdminGuard';
+
 export default function AdminAnalyticsPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-mono text-xs">Loading analytics...</div>}>
-      <AnalyticsContent />
-    </Suspense>
+    <AdminGuard>
+      <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-mono text-xs">Loading analytics...</div>}>
+        <AnalyticsContent />
+      </Suspense>
+    </AdminGuard>
   );
 }
