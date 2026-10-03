@@ -108,19 +108,20 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
     fetchState();
   }, [gameId, participantId]);
 
-  // 3. Socket.IO Realtime Reconnection & State Listener
+  // 3. Socket.IO Realtime Reconnection & Multi-Room State Listener
   useEffect(() => {
     const socket = io({ transports: ['websocket', 'polling'] });
 
     socket.emit('join_game', {
       gameId,
+      gamePin: gameState?.gamePin || gameId,
       participantId: participantId || undefined,
       role: 'player',
     });
 
     socket.on('game_state_changed', (payload) => {
       if (payload?.status) {
-        setGameState((prev: any) => prev ? { ...prev, status: payload.status, currentRound: payload.currentRound ?? prev.currentRound } : prev);
+        setGameState((prev: any) => (prev ? { ...prev, status: payload.status, currentRound: payload.currentRound ?? prev.currentRound } : prev));
       }
       fetchState();
     });
@@ -131,31 +132,31 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
       if (payload?.currentRound) setCurrentRound(payload.currentRound);
       if (payload?.activeQuestion) setActiveQuestion(payload.activeQuestion);
       if (payload?.status) {
-        setGameState((prev: any) => prev ? { ...prev, status: payload.status, currentRound: payload.roundNumber } : prev);
+        setGameState((prev: any) => (prev ? { ...prev, status: payload.status, currentRound: payload.roundNumber } : prev));
       }
       fetchState();
     });
 
     socket.on('market_locked', (payload) => {
       if (payload?.status) {
-        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+        setGameState((prev: any) => (prev ? { ...prev, status: payload.status } : prev));
       }
       fetchState();
     });
 
     socket.on('answer_revealed', (payload) => {
       if (payload?.status) {
-        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+        setGameState((prev: any) => (prev ? { ...prev, status: payload.status } : prev));
       }
       if (payload?.correctAnswer) {
-        setActiveQuestion((prev: any) => prev ? { ...prev, correctAnswer: payload.correctAnswer, explanation: payload.explanation } : prev);
+        setActiveQuestion((prev: any) => (prev ? { ...prev, correctAnswer: payload.correctAnswer, explanation: payload.explanation } : prev));
       }
       fetchState();
     });
 
     socket.on('settlement_completed', (payload) => {
       if (payload?.status) {
-        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+        setGameState((prev: any) => (prev ? { ...prev, status: payload.status } : prev));
       }
       if (payload?.leaderboard) setLeaderboard(payload.leaderboard);
       fetchState();
@@ -164,7 +165,22 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
     return () => {
       socket.disconnect();
     };
-  }, [gameId, participantId]);
+  }, [gameId, participantId, gameState?.gamePin]);
+
+  // 4. Smart Heartbeat Backup (2.5s interval during active round transitions to prevent missing updates)
+  useEffect(() => {
+    const activeStatuses = ['ROUND_START', 'QUESTION_LIVE', 'POSITION_SUBMISSION', 'MARKET_LOCKED', 'ANSWER_REVEAL'];
+    if (!gameState?.status || !activeStatuses.includes(gameState.status)) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      fetchState();
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [gameState?.status, gameId, participantId]);
+
 
 
 

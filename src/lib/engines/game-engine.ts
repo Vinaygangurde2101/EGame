@@ -25,8 +25,8 @@ export type GameStatus =
   | 'GAME_FINISHED';
 
 export async function transitionGameState(gameId: string, newStatus: GameStatus, metadata: Record<string, any> = {}) {
-  const game = await db.game.findUnique({
-    where: { id: gameId },
+  const game = await db.game.findFirst({
+    where: { OR: [{ id: gameId }, { gamePin: gameId }] },
   });
 
   if (!game) {
@@ -35,23 +35,25 @@ export async function transitionGameState(gameId: string, newStatus: GameStatus,
 
   // Update Game status
   const updatedGame = await db.game.update({
-    where: { id: gameId },
+    where: { id: game.id },
     data: { status: newStatus },
   });
 
-  // Invalidate in-memory cache for gameId
-  cache.invalidatePattern(gameId);
+  // Invalidate in-memory cache for gameId and game.id
+  cache.invalidatePattern(game.id);
+  cache.invalidatePattern(game.gamePin);
 
   // Audit event (non-blocking)
   logAuditEvent({
-    gameId,
+    gameId: game.id,
     eventType: `STATE_CHANGE_${newStatus}`,
     metadata: { previousStatus: game.status, newStatus, ...metadata },
   }).catch((err) => console.error('Audit log error:', err));
 
   // Emit realtime notification
-  emitGameEvent(gameId, 'game_state_changed', {
-    gameId,
+  emitGameEvent(game.id, 'game_state_changed', {
+    gameId: game.id,
+    gamePin: game.gamePin,
     status: newStatus,
     currentRound: updatedGame.currentRound,
     metadata,
@@ -62,8 +64,8 @@ export async function transitionGameState(gameId: string, newStatus: GameStatus,
 
 export async function advanceToNextRound(gameId: string) {
   const [game, questions] = await Promise.all([
-    db.game.findUnique({
-      where: { id: gameId },
+    db.game.findFirst({
+      where: { OR: [{ id: gameId }, { gamePin: gameId }] },
       include: {
         rounds: { orderBy: { roundNumber: 'asc' } },
       },
@@ -77,11 +79,11 @@ export async function advanceToNextRound(gameId: string) {
 
   if (nextRoundNumber > questions.length || nextRoundNumber > game.totalRounds) {
     // Game Finished
-    await transitionGameState(gameId, 'GAME_FINISHED');
+    await transitionGameState(game.id, 'GAME_FINISHED');
     return { status: 'GAME_FINISHED' };
   }
 
-  const question = await getQuestionForRoundFromPool(gameId, nextRoundNumber);
+  const question = await getQuestionForRoundFromPool(game.id, nextRoundNumber);
   if (!question) throw new Error(`Question for round ${nextRoundNumber} not found.`);
 
   // Determine round type (Special event: Bear Market, Bull Market, Volatility Market, Black Swan, Final Market)
@@ -104,7 +106,7 @@ export async function advanceToNextRound(gameId: string) {
   if (!round) {
     round = await db.round.create({
       data: {
-        gameId,
+        gameId: game.id,
         roundNumber: nextRoundNumber,
         roundType,
         multiplier,
@@ -125,19 +127,21 @@ export async function advanceToNextRound(gameId: string) {
 
   // Update Game current round
   await db.game.update({
-    where: { id: gameId },
+    where: { id: game.id },
     data: { currentRound: nextRoundNumber, status: 'ROUND_START' },
   });
 
   // Invalidate in-memory cache
-  cache.invalidatePattern(gameId);
+  cache.invalidatePattern(game.id);
+  cache.invalidatePattern(game.gamePin);
 
   // Sanitize question for broadcast
   const { correctAnswer: _, ...safeQuestionPayload } = question;
 
   // Emit round start event with rich realtime payload
-  emitGameEvent(gameId, 'round_started', {
-    gameId,
+  emitGameEvent(game.id, 'round_started', {
+    gameId: game.id,
+    gamePin: game.gamePin,
     status: 'ROUND_START',
     roundNumber: nextRoundNumber,
     roundType,
@@ -151,14 +155,20 @@ export async function advanceToNextRound(gameId: string) {
   // Automatically lock market when round timer expires (server-side auto-lock)
   const autoLockMs = (question.timerSeconds || 30) * 1000 + 1000;
   const targetRoundId = round.id;
+  const targetGameId = game.id;
   setTimeout(async () => {
     try {
       const currentRoundState = await db.round.findUnique({
         where: { id: targetRoundId },
+        include: { game: { select: { status: true } } },
       });
-      if (currentRoundState && currentRoundState.status === 'LIVE') {
-        console.log(`⏱️ Auto-locking market for round ${nextRoundNumber} (game: ${gameId})`);
-        await lockMarket(gameId, targetRoundId);
+      if (
+        currentRoundState &&
+        currentRoundState.status === 'LIVE' &&
+        ['ROUND_START', 'QUESTION_LIVE', 'POSITION_SUBMISSION'].includes(currentRoundState.game.status)
+      ) {
+        console.log(`⏱️ Auto-locking market for round ${nextRoundNumber} (game: ${targetGameId})`);
+        await lockMarket(targetGameId, targetRoundId);
       }
     } catch (e) {
       console.error('Auto-lock error:', e);
@@ -169,15 +179,23 @@ export async function advanceToNextRound(gameId: string) {
 }
 
 export async function lockMarket(gameId: string, roundId: string) {
+  const round = await db.round.findUnique({
+    where: { id: roundId },
+    include: { game: { select: { id: true, gamePin: true } } },
+  });
+
+  if (!round) throw new Error('Round missing');
+
   await db.round.update({
     where: { id: roundId },
     data: { status: 'LOCKED', lockTime: new Date() },
   });
 
-  await transitionGameState(gameId, 'MARKET_LOCKED');
+  await transitionGameState(round.game.id, 'MARKET_LOCKED');
 
-  emitGameEvent(gameId, 'market_locked', {
-    gameId,
+  emitGameEvent(round.game.id, 'market_locked', {
+    gameId: round.game.id,
+    gamePin: round.game.gamePin,
     roundId,
     status: 'MARKET_LOCKED',
   });
@@ -186,7 +204,7 @@ export async function lockMarket(gameId: string, roundId: string) {
 export async function revealAnswer(gameId: string, roundId: string) {
   const round = await db.round.findUnique({
     where: { id: roundId },
-    select: { id: true, questionId: true, gameId: true },
+    select: { id: true, questionId: true, gameId: true, game: { select: { id: true, gamePin: true } } },
   });
 
   if (!round) throw new Error('Round missing');
@@ -202,13 +220,14 @@ export async function revealAnswer(gameId: string, roundId: string) {
     data: { status: 'REVEALED', revealTime: new Date() },
   });
 
-  await transitionGameState(gameId, 'ANSWER_REVEAL', {
+  await transitionGameState(round.game.id, 'ANSWER_REVEAL', {
     correctAnswer: question.correctAnswer,
     explanation: question.explanation,
   });
 
-  emitGameEvent(gameId, 'answer_revealed', {
-    gameId,
+  emitGameEvent(round.game.id, 'answer_revealed', {
+    gameId: round.game.id,
+    gamePin: round.game.gamePin,
     roundId,
     status: 'ANSWER_REVEAL',
     correctAnswer: question.correctAnswer,
@@ -217,13 +236,21 @@ export async function revealAnswer(gameId: string, roundId: string) {
 }
 
 export async function executeRoundSettlement(gameId: string, roundId: string) {
-  const summary = await settleRound(gameId, roundId);
-  const leaderboard = await getGameLeaderboard(gameId);
+  const round = await db.round.findUnique({
+    where: { id: roundId },
+    select: { gameId: true, game: { select: { id: true, gamePin: true } } },
+  });
 
-  await transitionGameState(gameId, 'LEADERBOARD_UPDATE', { summary, leaderboard });
+  if (!round) throw new Error('Round not found');
 
-  emitGameEvent(gameId, 'settlement_completed', {
-    gameId,
+  const summary = await settleRound(round.game.id, roundId);
+  const leaderboard = await getGameLeaderboard(round.game.id);
+
+  await transitionGameState(round.game.id, 'LEADERBOARD_UPDATE', { summary, leaderboard });
+
+  emitGameEvent(round.game.id, 'settlement_completed', {
+    gameId: round.game.id,
+    gamePin: round.game.gamePin,
     roundId,
     status: 'LEADERBOARD_UPDATE',
     summary,
@@ -232,6 +259,7 @@ export async function executeRoundSettlement(gameId: string, roundId: string) {
 
   return { summary, leaderboard };
 }
+
 
 
 
