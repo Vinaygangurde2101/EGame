@@ -1,7 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { db } from '../db';
+import { cache } from '../cache';
 import { calculatePortfolioMetrics } from './portfolio-engine';
 import { checkAndAwardAchievements } from './achievement-engine';
+import { getQuestionByIdFromPool } from '../question-cache';
 
 export interface SettlementSummary {
   totalParticipants: number;
@@ -15,11 +17,14 @@ export interface SettlementSummary {
 }
 
 export async function settleRound(gameId: string, roundId: string): Promise<SettlementSummary> {
-  // Fetch round and question
+  // Fetch round and positions without joining Question table
   const round = await db.round.findUnique({
     where: { id: roundId },
-    include: {
-      question: true,
+    select: {
+      id: true,
+      gameId: true,
+      status: true,
+      questionId: true,
       positions: {
         include: {
           participant: true,
@@ -29,15 +34,24 @@ export async function settleRound(gameId: string, roundId: string): Promise<Sett
     },
   });
 
-  if (!round || !round.question) {
-    throw new Error(`Round ${roundId} or question not found.`);
+  if (!round) {
+    throw new Error(`Round ${roundId} not found.`);
   }
 
   if (round.status === 'SETTLED') {
     throw new Error(`Round ${roundId} has already been settled.`);
   }
 
-  const correctAnswer = round.question.correctAnswer;
+  // Retrieve correct answer directly from in-memory question pool
+  const question = round.questionId
+    ? await getQuestionByIdFromPool(round.gameId, round.questionId)
+    : null;
+
+  if (!question) {
+    throw new Error(`Question for round ${roundId} not found in cache pool.`);
+  }
+
+  const correctAnswer = question.correctAnswer;
   let totalWinners = 0;
   let totalLosers = 0;
   let totalPayout = 0;
@@ -58,12 +72,13 @@ export async function settleRound(gameId: string, roundId: string): Promise<Sett
       const settledPositionIds = new Set(existingSettlements.map((s) => s.positionId));
 
       const settlementsToCreate: Prisma.SettlementCreateManyInput[] = [];
-      const positionUpdates: Promise<any>[] = [];
-      const participantUpdates: Promise<any>[] = [];
+      const participantUpdates: (() => Promise<any>)[] = [];
+      const positionIdsToSettle: string[] = [];
 
       for (const position of round.positions) {
         if (settledPositionIds.has(position.id)) continue;
 
+        positionIdsToSettle.push(position.id);
         const isWin = position.selectedAnswer.toUpperCase() === correctAnswer.toUpperCase();
         const portfolioBefore = position.participant.currentCapital;
         let profitLoss = 0;
@@ -101,14 +116,7 @@ export async function settleRound(gameId: string, roundId: string): Promise<Sett
           portfolioAfter,
         });
 
-        positionUpdates.push(
-          tx.position.update({
-            where: { id: position.id },
-            data: { status: 'SETTLED' },
-          })
-        );
-
-        participantUpdates.push(
+        participantUpdates.push(() =>
           tx.participant.update({
             where: { id: position.participantId },
             data: {
@@ -151,8 +159,20 @@ export async function settleRound(gameId: string, roundId: string): Promise<Sett
         });
       }
 
-      // Execute updates in parallel within transaction
-      await Promise.all([...positionUpdates, ...participantUpdates]);
+      // Bulk update position status in a single query
+      if (positionIdsToSettle.length > 0) {
+        await tx.position.updateMany({
+          where: { id: { in: positionIdsToSettle } },
+          data: { status: 'SETTLED' },
+        });
+      }
+
+      // Execute participant updates in controlled batch chunks
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < participantUpdates.length; i += CHUNK_SIZE) {
+        const chunk = participantUpdates.slice(i, i + CHUNK_SIZE);
+        await Promise.all(chunk.map((fn) => fn()));
+      }
 
       // Mark round as SETTLED
       await tx.round.update({
@@ -186,17 +206,22 @@ export async function settleRound(gameId: string, roundId: string): Promise<Sett
       });
     },
     {
-      timeout: 30000, // Extend timeout for high-concurrency batches
+      timeout: 30000,
     }
   );
 
-  // Evaluate achievements concurrently in parallel batches
-  try {
-    const participantIds = Array.from(new Set(round.positions.map((p) => p.participantId)));
-    await Promise.all(participantIds.map((pid) => checkAndAwardAchievements(pid, gameId)));
-  } catch (err) {
-    console.error('Error evaluating achievements:', err);
-  }
+  // Clear in-memory cache for game state and leaderboard
+  cache.invalidatePattern(gameId);
+
+  // Evaluate achievements asynchronously in background (non-blocking for instant response)
+  setTimeout(async () => {
+    try {
+      const participantIds = Array.from(new Set(round.positions.map((p) => p.participantId)));
+      await Promise.all(participantIds.map((pid) => checkAndAwardAchievements(pid, gameId)));
+    } catch (err) {
+      console.error('Error evaluating achievements in background:', err);
+    }
+  }, 10);
 
   return {
     totalParticipants: round.positions.length,
@@ -209,3 +234,4 @@ export async function settleRound(gameId: string, roundId: string): Promise<Sett
     biggestLoser: biggestLoserAmount < 0 ? biggestLoser : undefined,
   };
 }
+

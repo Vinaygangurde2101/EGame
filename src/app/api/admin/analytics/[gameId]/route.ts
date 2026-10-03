@@ -1,60 +1,69 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { cache } from '@/lib/cache';
 
 export async function GET(req: Request, { params }: { params: { gameId: string } }) {
   try {
     const { gameId } = params;
+    const cacheKey = `analytics_${gameId}`;
+    const cached = cache.get<any>(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
 
     const game = await db.game.findFirst({
       where: { OR: [{ id: gameId }, { gamePin: gameId }] },
+      select: { id: true },
     });
 
     if (!game) {
       return NextResponse.json({ success: false, error: 'Game not found' }, { status: 404 });
     }
 
-    const participants = await db.participant.findMany({
-      where: { gameId: game.id },
-      include: {
-        positions: {
-          include: { riskLevel: true, settlement: true },
+    // Fast parallel database aggregations
+    const [participantAgg, activeRound] = await Promise.all([
+      db.participant.aggregate({
+        where: { gameId: game.id },
+        _sum: {
+          currentCapital: true,
+          exposedCapital: true,
         },
-      },
-    });
-
-    const rounds = await db.round.findMany({
-      where: { gameId: game.id },
-      include: {
-        positions: {
-          include: { riskLevel: true },
+        _count: true,
+      }),
+      db.round.findFirst({
+        where: { gameId: game.id, status: { in: ['LIVE', 'LOCKED', 'REVEALED'] } },
+        orderBy: { roundNumber: 'desc' },
+        include: {
+          positions: {
+            select: {
+              selectedAnswer: true,
+              riskLevel: { select: { name: true } },
+            },
+          },
         },
-      },
-    });
+      }),
+    ]);
 
-    // 1. Capital Exposure
-    let totalCapital = 0;
-    let capitalExposed = 0;
-    participants.forEach((p) => {
-      totalCapital += p.currentCapital;
-      capitalExposed += p.exposedCapital;
-    });
-
+    const totalParticipants = participantAgg._count || 0;
+    const totalCapital = participantAgg._sum.currentCapital || 0;
+    const capitalExposed = participantAgg._sum.exposedCapital || 0;
     const exposureRatio = totalCapital > 0 ? ((capitalExposed / totalCapital) * 100).toFixed(2) : '0.00';
 
-    // 2. Answer Distribution across all positions
     const answerCounts: Record<string, number> = { A: 0, B: 0, C: 0, D: 0 };
+    const riskCounts: Record<string, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, EXTREME: 0 };
     let totalPositionsSubmitted = 0;
 
-    // 3. Risk Distribution
-    const riskCounts: Record<string, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, EXTREME: 0 };
-
-    rounds.forEach((r) => {
-      r.positions.forEach((pos) => {
+    if (activeRound) {
+      activeRound.positions.forEach((pos) => {
         totalPositionsSubmitted++;
-        answerCounts[pos.selectedAnswer] = (answerCounts[pos.selectedAnswer] || 0) + 1;
-        riskCounts[pos.riskLevel.name] = (riskCounts[pos.riskLevel.name] || 0) + 1;
+        if (answerCounts[pos.selectedAnswer] !== undefined) {
+          answerCounts[pos.selectedAnswer]++;
+        }
+        if (pos.riskLevel?.name && riskCounts[pos.riskLevel.name] !== undefined) {
+          riskCounts[pos.riskLevel.name]++;
+        }
       });
-    });
+    }
 
     const answerDistribution = {
       A: totalPositionsSubmitted > 0 ? Math.round((answerCounts.A / totalPositionsSubmitted) * 100) : 0,
@@ -63,10 +72,10 @@ export async function GET(req: Request, { params }: { params: { gameId: string }
       D: totalPositionsSubmitted > 0 ? Math.round((answerCounts.D / totalPositionsSubmitted) * 100) : 0,
     };
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       analytics: {
-        totalParticipants: participants.length,
+        totalParticipants,
         totalCapital,
         capitalExposed,
         exposureRatio: parseFloat(exposureRatio),
@@ -74,8 +83,13 @@ export async function GET(req: Request, { params }: { params: { gameId: string }
         answerDistribution,
         riskCounts,
       },
-    });
+    };
+
+    cache.set(cacheKey, payload, 2000);
+
+    return NextResponse.json(payload);
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+

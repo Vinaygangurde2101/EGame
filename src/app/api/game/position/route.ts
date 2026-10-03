@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
+import { cache } from '@/lib/cache';
 import { calculateRiskExposure } from '@/lib/engines/risk-engine';
 import { logAuditEvent } from '@/lib/engines/audit-engine';
 import { emitGameEvent } from '@/lib/socket-emitter';
@@ -20,10 +21,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Invalid option selected.' }, { status: 400 });
     }
 
-    // Fetch participant, round, and risk level
-    const participant = await db.participant.findUnique({ where: { id: participantId } });
-    const round = await db.round.findUnique({ where: { id: roundId }, include: { game: true } });
-    const riskLevel = await db.riskLevel.findUnique({ where: { id: riskLevelId } });
+    // Fast parallel fetching for participant, round, and risk level
+    const [participant, round, riskLevel] = await Promise.all([
+      db.participant.findUnique({ where: { id: participantId } }),
+      db.round.findUnique({ where: { id: roundId }, include: { game: true } }),
+      db.riskLevel.findUnique({ where: { id: riskLevelId } }),
+    ]);
 
     if (!participant || !round || !riskLevel) {
       return NextResponse.json({ success: false, error: 'Invalid participant, round, or risk configuration.' }, { status: 400 });
@@ -42,6 +45,7 @@ export async function POST(req: Request) {
           roundId,
         },
       },
+      select: { id: true },
     });
 
     if (existingPosition) {
@@ -85,7 +89,11 @@ export async function POST(req: Request) {
       return pos;
     });
 
-    await logAuditEvent({
+    // Invalidate cached state for fast reactivity
+    cache.invalidatePattern(`game_api_${round.gameId}`);
+
+    // Asynchronous non-blocking audit logging
+    logAuditEvent({
       gameId: round.gameId,
       participantId,
       roundId,
@@ -97,7 +105,7 @@ export async function POST(req: Request) {
         potentialWin,
         potentialLoss,
       },
-    });
+    }).catch((err) => console.error('Audit log error:', err));
 
     // Realtime broadcast to admin & arena
     emitGameEvent(round.gameId, 'position_submitted', {
@@ -114,3 +122,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+

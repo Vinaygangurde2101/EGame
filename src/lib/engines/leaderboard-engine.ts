@@ -1,4 +1,5 @@
 import { db } from '../db';
+import { cache } from '../cache';
 
 export interface LeaderboardEntry {
   rank: number;
@@ -18,8 +19,13 @@ export interface LeaderboardEntry {
 }
 
 export async function getGameLeaderboard(gameId: string, currentRoundNumber?: number): Promise<LeaderboardEntry[]> {
+  const cacheKey = `leaderboard_${gameId}`;
+  const cached = cache.get<LeaderboardEntry[]>(cacheKey);
+  if (cached) return cached;
+
   const game = await db.game.findFirst({
     where: { OR: [{ id: gameId }, { gamePin: gameId }] },
+    select: { id: true },
   });
 
   if (!game) return [];
@@ -41,6 +47,7 @@ export async function getGameLeaderboard(gameId: string, currentRoundNumber?: nu
           profitLoss: true,
         },
         orderBy: { settledAt: 'desc' },
+        take: 10,
       },
       _count: {
         select: {
@@ -49,6 +56,10 @@ export async function getGameLeaderboard(gameId: string, currentRoundNumber?: nu
         },
       },
     },
+    orderBy: [
+      { currentCapital: 'desc' },
+      { netPnL: 'desc' },
+    ],
   });
 
   // Calculate scores for each participant
@@ -75,7 +86,6 @@ export async function getGameLeaderboard(gameId: string, currentRoundNumber?: nu
       accuracy,
       streakCount: p.streakCount,
       achievementsCount: p._count.achievements,
-      // Sorting key primary: currentCapital, secondary: netPnL, tertiary: accuracy
       sortKey: p.currentCapital * 1000 + p.netPnL + accuracy,
     };
   });
@@ -86,7 +96,6 @@ export async function getGameLeaderboard(gameId: string, currentRoundNumber?: nu
   // Assign ranks & calculate movements
   const leaderboard: LeaderboardEntry[] = entries.map((entry, index) => {
     const rank = index + 1;
-    // Simple heuristic for movement based on last round P&L
     let rankMovement: 'UP' | 'DOWN' | 'SAME' | 'NEW' = 'SAME';
     if (entry.lastRoundPnL > 0) rankMovement = 'UP';
     else if (entry.lastRoundPnL < 0) rankMovement = 'DOWN';
@@ -108,5 +117,9 @@ export async function getGameLeaderboard(gameId: string, currentRoundNumber?: nu
     };
   });
 
+  // Cache leaderboard results for fast concurrent access
+  cache.set(cacheKey, leaderboard, 2000);
+
   return leaderboard;
 }
+

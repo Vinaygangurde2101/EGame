@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { invalidateQuestionPoolCache } from '@/lib/question-cache';
 
 export async function GET(req: Request) {
   try {
@@ -76,6 +77,9 @@ export async function POST(req: Request) {
       },
     });
 
+    // Invalidate in-memory question pool cache
+    invalidateQuestionPoolCache(game.id);
+
     return NextResponse.json({ success: true, question });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -91,12 +95,18 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ success: false, error: 'questionId required' }, { status: 400 });
     }
 
-    await db.question.delete({
+    const question = await db.question.delete({
       where: { id: questionId },
+      select: { gameId: true },
     });
+
+    if (question?.gameId) {
+      invalidateQuestionPoolCache(question.gameId);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+

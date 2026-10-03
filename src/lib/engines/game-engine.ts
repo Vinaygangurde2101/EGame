@@ -1,9 +1,14 @@
 import { db } from '../db';
+import { cache } from '../cache';
 import { emitGameEvent } from '../socket-emitter';
 import { logAuditEvent } from './audit-engine';
 import { settleRound } from './settlement-engine';
 import { getGameLeaderboard } from './leaderboard-engine';
-import { ensureGameQuestionsExist } from './question-defaults';
+import {
+  getGameQuestionsFromPool,
+  getQuestionForRoundFromPool,
+  getQuestionByIdFromPool,
+} from '../question-cache';
 
 export type GameStatus =
   | 'WAITING'
@@ -34,12 +39,15 @@ export async function transitionGameState(gameId: string, newStatus: GameStatus,
     data: { status: newStatus },
   });
 
-  // Audit event
-  await logAuditEvent({
+  // Invalidate in-memory cache for gameId
+  cache.invalidatePattern(gameId);
+
+  // Audit event (non-blocking)
+  logAuditEvent({
     gameId,
     eventType: `STATE_CHANGE_${newStatus}`,
     metadata: { previousStatus: game.status, newStatus, ...metadata },
-  });
+  }).catch((err) => console.error('Audit log error:', err));
 
   // Emit realtime notification
   emitGameEvent(gameId, 'game_state_changed', {
@@ -53,31 +61,28 @@ export async function transitionGameState(gameId: string, newStatus: GameStatus,
 }
 
 export async function advanceToNextRound(gameId: string) {
-  let game = await db.game.findUnique({
-    where: { id: gameId },
-    include: {
-      questions: { orderBy: { orderIndex: 'asc' } },
-      rounds: { orderBy: { roundNumber: 'asc' } },
-    },
-  });
+  const [game, questions] = await Promise.all([
+    db.game.findUnique({
+      where: { id: gameId },
+      include: {
+        rounds: { orderBy: { roundNumber: 'asc' } },
+      },
+    }),
+    getGameQuestionsFromPool(gameId),
+  ]);
 
   if (!game) throw new Error('Game not found');
 
-  // If game has no questions attached, auto-populate default questions
-  if (game.questions.length === 0) {
-    const questions = await ensureGameQuestionsExist(gameId);
-    game.questions = questions;
-  }
-
   const nextRoundNumber = game.currentRound + 1;
 
-  if (nextRoundNumber > game.questions.length || nextRoundNumber > game.totalRounds) {
+  if (nextRoundNumber > questions.length || nextRoundNumber > game.totalRounds) {
     // Game Finished
     await transitionGameState(gameId, 'GAME_FINISHED');
     return { status: 'GAME_FINISHED' };
   }
 
-  const question = game.questions[nextRoundNumber - 1];
+  const question = await getQuestionForRoundFromPool(gameId, nextRoundNumber);
+  if (!question) throw new Error(`Question for round ${nextRoundNumber} not found.`);
 
   // Determine round type (Special event: Bear Market, Bull Market, Volatility Market, Black Swan, Final Market)
   let roundType = 'Normal Market';
@@ -124,6 +129,9 @@ export async function advanceToNextRound(gameId: string) {
     data: { currentRound: nextRoundNumber, status: 'ROUND_START' },
   });
 
+  // Invalidate in-memory cache
+  cache.invalidatePattern(gameId);
+
   // Emit round start event
   emitGameEvent(gameId, 'round_started', {
     gameId,
@@ -169,10 +177,16 @@ export async function lockMarket(gameId: string, roundId: string) {
 export async function revealAnswer(gameId: string, roundId: string) {
   const round = await db.round.findUnique({
     where: { id: roundId },
-    include: { question: true },
+    select: { id: true, questionId: true, gameId: true },
   });
 
-  if (!round || !round.question) throw new Error('Round or question missing');
+  if (!round) throw new Error('Round missing');
+
+  const question = round.questionId
+    ? await getQuestionByIdFromPool(round.gameId, round.questionId)
+    : null;
+
+  if (!question) throw new Error('Question missing');
 
   await db.round.update({
     where: { id: roundId },
@@ -180,15 +194,15 @@ export async function revealAnswer(gameId: string, roundId: string) {
   });
 
   await transitionGameState(gameId, 'ANSWER_REVEAL', {
-    correctAnswer: round.question.correctAnswer,
-    explanation: round.question.explanation,
+    correctAnswer: question.correctAnswer,
+    explanation: question.explanation,
   });
 
   emitGameEvent(gameId, 'answer_revealed', {
     gameId,
     roundId,
-    correctAnswer: round.question.correctAnswer,
-    explanation: round.question.explanation,
+    correctAnswer: question.correctAnswer,
+    explanation: question.explanation,
   });
 }
 
@@ -207,3 +221,5 @@ export async function executeRoundSettlement(gameId: string, roundId: string) {
 
   return { summary, leaderboard };
 }
+
+

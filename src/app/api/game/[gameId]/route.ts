@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { cache } from '@/lib/cache';
 import { getGameLeaderboard } from '@/lib/engines/leaderboard-engine';
+import { getQuestionForRoundFromPool } from '@/lib/question-cache';
 
 export async function GET(req: Request, { params }: { params: { gameId: string } }) {
   try {
@@ -8,17 +10,31 @@ export async function GET(req: Request, { params }: { params: { gameId: string }
     const { searchParams } = new URL(req.url);
     const participantId = searchParams.get('participantId');
 
+    const cacheKey = `game_api_${gameId}_${participantId || 'anon'}`;
+    const cachedResponse = cache.get<any>(cacheKey);
+    if (cachedResponse) {
+      return NextResponse.json(cachedResponse, {
+        headers: {
+          'Cache-Control': 'public, max-age=1, stale-while-revalidate=2',
+        },
+      });
+    }
+
+    // Lightweight game lookup without fetching all questions and rounds in DB
     const game = await db.game.findFirst({
       where: {
         OR: [{ id: gameId }, { gamePin: gameId }],
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        gamePin: true,
+        status: true,
+        startingCapital: true,
+        currentRound: true,
+        totalRounds: true,
+        roundTimerSeconds: true,
         riskLevels: true,
-        questions: { orderBy: { orderIndex: 'asc' } },
-        rounds: {
-          orderBy: { roundNumber: 'asc' },
-          include: { question: true },
-        },
       },
     });
 
@@ -26,8 +42,20 @@ export async function GET(req: Request, { params }: { params: { gameId: string }
       return NextResponse.json({ success: false, error: 'Game not found' }, { status: 404 });
     }
 
-    // Current active round
-    const currentRound = game.rounds.find((r: { roundNumber: number }) => r.roundNumber === game.currentRound) || null;
+    // Fetch active round & question from memory pool in parallel
+    const [currentRound, rawQuestion] = await Promise.all([
+      game.currentRound > 0
+        ? db.round.findFirst({
+            where: {
+              gameId: game.id,
+              roundNumber: game.currentRound,
+            },
+          })
+        : Promise.resolve(null),
+      game.currentRound > 0
+        ? getQuestionForRoundFromPool(game.id, game.currentRound)
+        : Promise.resolve(null),
+    ]);
 
     // Parallel execution for participant data & leaderboard
     const [participant, currentPosition, history, leaderboard] = await Promise.all([
@@ -52,25 +80,25 @@ export async function GET(req: Request, { params }: { params: { gameId: string }
         ? db.position.findMany({
             where: { participantId },
             include: {
-              round: { include: { question: true } },
+              round: true,
               riskLevel: true,
               settlement: true,
             },
             orderBy: { submittedAt: 'desc' },
-            take: 20,
+            take: 10,
           })
         : Promise.resolve([]),
       getGameLeaderboard(game.id),
     ]);
 
     // Sanitize question if market is live to avoid leaking correct answer
-    let activeQuestion = currentRound?.question || null;
+    let activeQuestion = rawQuestion as any;
     if (activeQuestion && game.status !== 'ANSWER_REVEAL' && game.status !== 'LEADERBOARD_UPDATE' && game.status !== 'GAME_FINISHED') {
       const { correctAnswer, ...safeQuestion } = activeQuestion;
-      activeQuestion = safeQuestion as any;
+      activeQuestion = safeQuestion;
     }
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       game: {
         id: game.id,
@@ -89,8 +117,18 @@ export async function GET(req: Request, { params }: { params: { gameId: string }
       currentPosition,
       history,
       leaderboard,
+    };
+
+    // Cache payload for 1.5 seconds for instant multi-user throughput
+    cache.set(cacheKey, payload, 1500);
+
+    return NextResponse.json(payload, {
+      headers: {
+        'Cache-Control': 'public, max-age=1, stale-while-revalidate=2',
+      },
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+

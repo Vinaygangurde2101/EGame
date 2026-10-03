@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import io from 'socket.io-client';
 import Navbar from '@/components/Navbar';
@@ -69,8 +69,12 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
     }
   }, [gameId, searchParams]);
 
+  const isFetchingRef = useRef(false);
+
   // 2. Fetch authoritative state from Server
   const fetchState = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const url = participantId
         ? `/api/game/${gameId}?participantId=${participantId}`
@@ -95,6 +99,8 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
       }
     } catch (err) {
       console.error('Failed to fetch game state:', err);
+    } finally {
+      isFetchingRef.current = false;
     }
   };
 
@@ -125,6 +131,7 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
       socket.disconnect();
     };
   }, [gameId, participantId]);
+
 
   const handleAutoLock = async () => {
     if (gameId && currentRound && (gameState?.status === 'ROUND_START' || gameState?.status === 'QUESTION_LIVE' || gameState?.status === 'POSITION_SUBMISSION')) {
