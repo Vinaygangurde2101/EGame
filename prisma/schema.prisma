@@ -1,0 +1,212 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String        @id @default(uuid())
+  name         String
+  email        String        @unique
+  role         String        @default("PLAYER") // ADMIN, PLAYER
+  createdAt    DateTime      @default(now())
+  participants Participant[]
+}
+
+model Game {
+  id                String        @id @default(uuid())
+  name              String
+  gamePin           String        @unique
+  status            String        @default("WAITING") // WAITING, ROUND_START, QUESTION_LIVE, POSITION_SUBMISSION, MARKET_LOCKED, ANSWER_REVEAL, SETTLEMENT, PORTFOLIO_UPDATE, LEADERBOARD_UPDATE, ROUND_RESULT, NEXT_ROUND, GAME_FINISHED
+  startingCapital   Int           @default(10000)
+  currentRound      Int           @default(0)
+  totalRounds       Int           @default(10)
+  roundTimerSeconds Int           @default(30)
+  scoringConfig     String        @default("{\"performance\":60,\"accuracy\":25,\"risk\":15}")
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  participants      Participant[]
+  rounds            Round[]
+  questions         Question[]
+  riskLevels        RiskLevel[]
+  auditLogs         AuditLog[]
+}
+
+model Participant {
+  id               String   @id @default(uuid())
+  gameId           String
+  userId           String?
+  displayName      String
+  avatar           String   @default("bull")
+  startingCapital  Int      @default(10000)
+  currentCapital   Int      @default(10000)
+  availableCash    Int      @default(10000)
+  exposedCapital   Int      @default(0)
+  totalProfit      Int      @default(0)
+  totalLoss        Int      @default(0)
+  netPnL           Int      @default(0)
+  returnPercentage Float    @default(0.0)
+  streakCount      Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  game             Game                     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user             User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  positions        Position[]
+  settlements      Settlement[]
+  achievements     ParticipantAchievement[]
+  auditLogs        AuditLog[]
+
+  @@index([gameId])
+  @@index([userId])
+  @@index([gameId, currentCapital])
+}
+
+model Question {
+  id            String   @id @default(uuid())
+  gameId        String
+  questionText  String
+  optionA       String
+  optionB       String
+  optionC       String
+  optionD       String
+  correctAnswer String   // "A", "B", "C", "D"
+  category      String   @default("General Knowledge")
+  difficulty    String   @default("Medium") // Easy, Medium, Hard, Extreme
+  explanation   String?
+  timerSeconds  Int      @default(30)
+  orderIndex    Int      @default(1)
+  createdAt     DateTime @default(now())
+
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  rounds        Round[]
+
+  @@index([gameId])
+}
+
+model RiskLevel {
+  id                 String     @id @default(uuid())
+  gameId             String
+  name               String     // LOW, MEDIUM, HIGH, EXTREME
+  exposurePercentage Float      // e.g. 0.10, 0.25, 0.50, 0.75
+  winningReturn      Float      // e.g. 0.10, 0.25, 0.50, 1.00
+  losingRate         Float      // e.g. 0.05, 0.15, 0.35, 0.75
+  color              String     @default("cyan")
+
+  game               Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  positions          Position[]
+
+  @@index([gameId])
+}
+
+model Round {
+  id              String       @id @default(uuid())
+  gameId          String
+  roundNumber     Int
+  roundType       String       @default("Normal Market") // Volatility Market, Bull Market, Bear Market, Black Swan, Final Market
+  multiplier      Float        @default(1.0)
+  status          String       @default("PENDING") // PENDING, LIVE, LOCKED, REVEALED, SETTLED
+  questionId      String?
+  startTime       DateTime?
+  lockTime        DateTime?
+  revealTime      DateTime?
+  settlementTime  DateTime?
+  createdAt       DateTime     @default(now())
+
+  game            Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  question        Question?    @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  positions       Position[]
+  settlements     Settlement[]
+  auditLogs       AuditLog[]
+
+  @@index([gameId])
+  @@index([gameId, roundNumber])
+}
+
+model Position {
+  id             String      @id @default(uuid())
+  participantId  String
+  roundId        String
+  selectedAnswer String      // "A", "B", "C", "D"
+  riskLevelId    String
+  exposedCapital Int
+  potentialWin   Int
+  potentialLoss  Int
+  submittedAt    DateTime    @default(now())
+  lockedAt       DateTime    @default(now())
+  status         String      @default("LOCKED") // SUBMITTED, LOCKED, SETTLED
+
+  participant    Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  round          Round       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  riskLevel      RiskLevel   @relation(fields: [riskLevelId], references: [id], onDelete: Cascade)
+  settlement     Settlement?
+
+  @@unique([participantId, roundId])
+  @@index([roundId])
+  @@index([participantId])
+}
+
+model Settlement {
+  id              String      @id @default(uuid())
+  positionId      String      @unique
+  participantId   String
+  roundId         String
+  result          String      // WIN, LOSS
+  profitLoss      Int
+  portfolioBefore Int
+  portfolioAfter  Int
+  settledAt       DateTime    @default(now())
+
+  position        Position    @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  participant     Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  round           Round       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([participantId])
+  @@index([roundId])
+}
+
+model Achievement {
+  id          String                   @id @default(uuid())
+  name        String                   @unique
+  description String
+  icon        String
+  category    String                   @default("General")
+
+  earnedBy    ParticipantAchievement[]
+}
+
+model ParticipantAchievement {
+  id            String      @id @default(uuid())
+  participantId String
+  achievementId String
+  earnedAt      DateTime    @default(now())
+
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, achievementId])
+  @@index([participantId])
+}
+
+model AuditLog {
+  id            String       @id @default(uuid())
+  gameId        String
+  participantId String?
+  roundId       String?
+  eventType     String
+  metadata      String?      // JSON payload string
+  createdAt     DateTime     @default(now())
+
+  game          Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  participant   Participant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  round         Round?       @relation(fields: [roundId], references: [id], onDelete: SetNull)
+
+  @@index([gameId])
+  @@index([participantId])
+  @@index([roundId])
+}
