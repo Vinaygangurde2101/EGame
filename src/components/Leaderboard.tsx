@@ -52,11 +52,8 @@ export default function Leaderboard({ entries, currentParticipantId, compact = f
           const isTop3 = entry.rank <= 3;
 
           return (
-            <motion.div
+            <div
               key={entry.participantId}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
               className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
                 isCurrent
                   ? 'bg-cyan-950/80 border-cyan-400 text-white shadow-lg ring-1 ring-cyan-400/60'
@@ -129,7 +126,7 @@ export default function Leaderboard({ entries, currentParticipantId, compact = f
                   {formatINR(entry.netPnL, true)} ({entry.returnPercentage >= 0 ? `+${entry.returnPercentage.toFixed(1)}%` : `${entry.returnPercentage.toFixed(1)}%`})
                 </div>
               </div>
-            </motion.div>
+            </div>
           );
         })}
       </div>

@@ -110,7 +110,7 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
 
   // 3. Socket.IO Realtime Reconnection & State Listener
   useEffect(() => {
-    const socket = io();
+    const socket = io({ transports: ['websocket', 'polling'] });
 
     socket.emit('join_game', {
       gameId,

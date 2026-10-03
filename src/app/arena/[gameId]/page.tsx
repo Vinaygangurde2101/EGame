@@ -31,7 +31,7 @@ export default function ArenaPage({ params }: { params: { gameId: string } }) {
   useEffect(() => {
     fetchState();
 
-    const socket = io();
+    const socket = io({ transports: ['websocket', 'polling'] });
     socket.emit('join_game', { gameId, role: 'arena' });
 
     socket.on('game_state_changed', (payload: any) => {

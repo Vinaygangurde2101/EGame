@@ -59,7 +59,7 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
   useEffect(() => {
     fetchState();
 
-    const socket = io();
+    const socket = io({ transports: ['websocket', 'polling'] });
     socket.emit('join_game', { gameId, role: 'admin' });
 
     socket.on('game_state_changed', (payload) => {

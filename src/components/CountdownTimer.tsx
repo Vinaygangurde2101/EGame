@@ -20,6 +20,8 @@ export default function CountdownTimer({
 
   useEffect(() => {
     let timer: any;
+    let hasExpired = false;
+
     if (startTime) {
       const startMs = new Date(startTime).getTime();
       const endMs = startMs + totalSeconds * 1000;
@@ -27,7 +29,8 @@ export default function CountdownTimer({
       const update = () => {
         const remaining = Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
         setTimeLeft(remaining);
-        if (remaining <= 0 && onExpire) {
+        if (remaining <= 0 && onExpire && !hasExpired) {
+          hasExpired = true;
           onExpire();
         }
       };
