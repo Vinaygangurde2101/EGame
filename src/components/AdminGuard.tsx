@@ -5,7 +5,7 @@ import { ShieldAlert, Lock, Mail, Key, LogIn, CheckCircle } from 'lucide-react';
 
 export default function AdminGuard({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [email, setEmail] = useState('admin@knowledgeexchange.io');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -106,11 +106,6 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
                 placeholder="••••••••••••"
                 className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-xl px-4 py-3 text-sm text-white outline-none transition"
               />
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-400 text-center">
-              💡 <span className="text-cyan-400 font-bold">Default Credentials:</span> <br />
-              Email: <code className="text-white">admin@knowledgeexchange.io</code> | Pass: <code className="text-emerald-400 font-bold">admin123</code>
             </div>
 
             <button
