@@ -1,0 +1,156 @@
+import { db } from '../db';
+
+export const DEFAULT_QUESTIONS = [
+  {
+    orderIndex: 1,
+    category: 'Stock Markets',
+    difficulty: 'Easy',
+    questionText: 'What term describes a market condition where stock prices are continuously rising?',
+    optionA: 'Bear Market',
+    optionB: 'Bull Market',
+    optionC: 'Stagflation',
+    optionD: 'Short Squeeze',
+    correctAnswer: 'B',
+    explanation: 'A Bull Market refers to a period of time when stock prices are rising or expected to rise.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 2,
+    category: 'Macroeconomics',
+    difficulty: 'Medium',
+    questionText: 'What central bank mechanism is used to control inflation by raising short-term interest rates?',
+    optionA: 'Monetary Tightening',
+    optionB: 'Quantitative Easing',
+    optionC: 'Fiscal Stimulus',
+    optionD: 'Yield Curve Control',
+    correctAnswer: 'A',
+    explanation: 'Monetary tightening (raising benchmark rates) reduces money supply to curb inflation.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 3,
+    category: 'Corporate Finance',
+    difficulty: 'Medium',
+    questionText: 'What ratio measures a company’s valuation relative to its actual net annual income per share?',
+    optionA: 'Debt-to-Equity Ratio',
+    optionB: 'P/E (Price-to-Earnings) Ratio',
+    optionC: 'Current Ratio',
+    optionD: 'Return on Equity (ROE)',
+    correctAnswer: 'B',
+    explanation: 'The P/E Ratio measures current share price relative to its per-share earnings.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 4,
+    category: 'Cryptocurrency & FinTech',
+    difficulty: 'Hard',
+    questionText: 'What is the maximum supply limit of Bitcoins that will ever exist in the protocol network?',
+    optionA: '18 Million',
+    optionB: '21 Million',
+    optionC: '50 Million',
+    optionD: 'Unlimited',
+    correctAnswer: 'B',
+    explanation: 'Satoshi Nakamoto hardcoded a maximum cap of 21,000,000 Bitcoins into the protocol.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 5,
+    category: 'Investment Banking',
+    difficulty: 'Medium',
+    questionText: 'What is the initial public offering process where a private company sells stock to the public called?',
+    optionA: 'IPO',
+    optionB: 'SPAC',
+    optionC: 'LBO',
+    optionD: 'M&A',
+    correctAnswer: 'A',
+    explanation: 'IPO stands for Initial Public Offering.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 6,
+    category: 'Indian Economy',
+    difficulty: 'Hard',
+    questionText: 'Which regulatory authority oversees equity markets and stock exchanges in India?',
+    optionA: 'RBI',
+    optionB: 'SEBI',
+    optionC: 'IRDAI',
+    optionD: 'NABARD',
+    correctAnswer: 'B',
+    explanation: 'SEBI (Securities and Exchange Board of India) regulates the Indian capital market.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 7,
+    category: 'Global Markets',
+    difficulty: 'Hard',
+    questionText: 'What financial asset is traditionally considered the primary "Safe Haven" store of value during market volatility?',
+    optionA: 'Tech Stocks',
+    optionB: 'Gold',
+    optionC: 'High-Yield Bonds',
+    optionD: 'Crude Oil',
+    correctAnswer: 'B',
+    explanation: 'Gold is historically viewed as a safe haven asset to protect capital against inflation and crisis.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 8,
+    category: 'Options & Derivatives',
+    difficulty: 'Extreme',
+    questionText: 'What financial derivative contract gives the holder the right, but NOT the obligation, to BUY an asset at a set price?',
+    optionA: 'Put Option',
+    optionB: 'Call Option',
+    optionC: 'Futures Contract',
+    optionD: 'Credit Default Swap',
+    correctAnswer: 'B',
+    explanation: 'A Call Option gives the buyer the right to buy an asset at the specified strike price.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 9,
+    category: 'Venture Capital',
+    difficulty: 'Hard',
+    questionText: 'What term describes a privately held startup company valued at over $1 Billion?',
+    optionA: 'Decacorn',
+    optionB: 'Unicorn',
+    optionC: 'Centaur',
+    optionD: 'Angel Company',
+    correctAnswer: 'B',
+    explanation: 'Unicorn refers to a private startup company valued at $1 billion or more.',
+    timerSeconds: 30,
+  },
+  {
+    orderIndex: 10,
+    category: 'Final Market Championship',
+    difficulty: 'Extreme',
+    questionText: 'Which famous investor coined the rule: "Rule No. 1: Never lose money. Rule No. 2: Never forget rule No. 1"?',
+    optionA: 'Ray Dalio',
+    optionB: 'Warren Buffett',
+    optionC: 'Peter Lynch',
+    optionD: 'George Soros',
+    correctAnswer: 'B',
+    explanation: 'Warren Buffett famous quote emphasizing capital preservation as the cornerstone of investing.',
+    timerSeconds: 40,
+  },
+];
+
+export async function ensureGameQuestionsExist(gameId: string) {
+  const existingCount = await db.question.count({
+    where: { gameId },
+  });
+
+  if (existingCount === 0) {
+    for (const q of DEFAULT_QUESTIONS) {
+      await db.question.create({
+        data: {
+          ...q,
+          gameId,
+        },
+      });
+    }
+  }
+
+  return await db.question.findMany({
+    where: { gameId },
+    orderBy: { orderIndex: 'asc' },
+  });
+}

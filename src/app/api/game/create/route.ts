@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { logAuditEvent } from '@/lib/engines/audit-engine';
 import { DEFAULT_RISK_LEVELS } from '@/lib/engines/risk-engine';
+import { ensureGameQuestionsExist } from '@/lib/engines/question-defaults';
 
 export async function POST(req: Request) {
   try {
@@ -31,6 +32,9 @@ export async function POST(req: Request) {
         },
       });
     }
+
+    // Auto-populate 10 default financial questions for this game
+    await ensureGameQuestionsExist(game.id);
 
     await logAuditEvent({
       gameId: game.id,

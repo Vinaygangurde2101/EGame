@@ -3,6 +3,7 @@ import { emitGameEvent } from '../socket-emitter';
 import { logAuditEvent } from './audit-engine';
 import { settleRound } from './settlement-engine';
 import { getGameLeaderboard } from './leaderboard-engine';
+import { ensureGameQuestionsExist } from './question-defaults';
 
 export type GameStatus =
   | 'WAITING'
@@ -52,7 +53,7 @@ export async function transitionGameState(gameId: string, newStatus: GameStatus,
 }
 
 export async function advanceToNextRound(gameId: string) {
-  const game = await db.game.findUnique({
+  let game = await db.game.findUnique({
     where: { id: gameId },
     include: {
       questions: { orderBy: { orderIndex: 'asc' } },
@@ -61,6 +62,12 @@ export async function advanceToNextRound(gameId: string) {
   });
 
   if (!game) throw new Error('Game not found');
+
+  // If game has no questions attached, auto-populate default questions
+  if (game.questions.length === 0) {
+    const questions = await ensureGameQuestionsExist(gameId);
+    game.questions = questions;
+  }
 
   const nextRoundNumber = game.currentRound + 1;
 

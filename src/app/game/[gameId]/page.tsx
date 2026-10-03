@@ -141,6 +141,22 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
     }
   };
 
+  const handleStartRound = async () => {
+    setSubmitting(true);
+    try {
+      await fetch('/api/admin/round/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameId }),
+      });
+      await fetchState();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Handle Position Submission
   const handleSubmitPosition = async () => {
     if (!selectedOption) {
@@ -247,17 +263,45 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
 
               {/* WAITING ROOM */}
               {gameState?.status === 'WAITING' && (
-                <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl space-y-3">
+                <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl space-y-4">
                   <div className="w-12 h-12 mx-auto rounded-2xl bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
                     <Sparkles className="w-6 h-6 animate-pulse" />
                   </div>
                   <h3 className="font-mono text-xl font-bold text-white">MARKET WAITING ROOM</h3>
                   <p className="text-xs font-mono text-slate-400">
-                    You are connected to the market. Admin will start the round shortly.
+                    You are connected to the live market. Click below to start Round 1 and begin trading!
                   </p>
                   <div className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-full text-xs font-mono text-slate-400">
                     PIN: {gameState?.gamePin} • Starting Capital: {formatINR(gameState?.startingCapital || 10000)}
                   </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={handleStartRound}
+                      className="w-full py-4 bg-gradient-to-r from-emerald-400 via-cyan-500 to-indigo-500 hover:from-emerald-300 hover:to-indigo-400 text-slate-950 font-mono font-bold text-base rounded-2xl shadow-xl shadow-cyan-500/20 transition transform active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      🚀 START ROUND 1 NOW
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* FALLBACK IF QUESTION MISSING */}
+              {!activeQuestion && gameState?.status !== 'WAITING' && gameState?.status !== 'GAME_FINISHED' && (
+                <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl space-y-4">
+                  <h3 className="font-mono text-lg font-bold text-white">READY FOR NEXT ROUND</h3>
+                  <p className="text-xs font-mono text-slate-400">
+                    Click below to advance to the next market round and load the question.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={handleStartRound}
+                    className="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-mono font-bold text-sm rounded-xl shadow-lg flex items-center justify-center gap-2"
+                  >
+                    ⚡ LOAD NEXT ROUND QUESTION
+                  </button>
                 </div>
               )}
 
@@ -322,9 +366,9 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
                 </div>
               )}
 
-              {/* REVEAL */}
+              {/* REVEAL & NEXT ROUND BUTTON */}
               {(gameState?.status === 'ANSWER_REVEAL' || gameState?.status === 'SETTLEMENT' || gameState?.status === 'LEADERBOARD_UPDATE') && (
-                <div className="bg-slate-900/90 border border-cyan-500/50 rounded-2xl p-5 shadow-xl text-center space-y-3">
+                <div className="bg-slate-900/90 border border-cyan-500/50 rounded-2xl p-5 shadow-xl text-center space-y-4">
                   <span className="text-[11px] font-mono uppercase tracking-wider text-cyan-400 px-3 py-1 bg-cyan-950 rounded-full border border-cyan-500/30">
                     MARKET REVEAL & SETTLEMENT
                   </span>
@@ -336,6 +380,14 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
                       💡 {activeQuestion.explanation}
                     </p>
                   )}
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={handleStartRound}
+                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-mono font-bold text-sm rounded-xl shadow-lg flex items-center justify-center gap-2"
+                  >
+                    NEXT ROUND ➔
+                  </button>
                 </div>
               )}
             </section>
