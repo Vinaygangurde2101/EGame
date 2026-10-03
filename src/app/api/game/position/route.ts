@@ -32,9 +32,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Invalid participant, round, or risk configuration.' }, { status: 400 });
     }
 
-    // Validate state: Market must be open
-    if (round.status === 'LOCKED' || round.status === 'SETTLED' || round.game.status === 'MARKET_LOCKED') {
+    // Strict state validation: Market must be open & active
+    const allowedGameStatuses = ['ROUND_START', 'QUESTION_LIVE', 'POSITION_SUBMISSION'];
+    if (
+      !allowedGameStatuses.includes(round.game.status) ||
+      round.status !== 'LIVE'
+    ) {
       return NextResponse.json({ success: false, error: 'Market is locked. Position submissions are closed.' }, { status: 400 });
+    }
+
+    // Capital check: bankrupt traders cannot place market orders
+    if (participant.currentCapital <= 0) {
+      return NextResponse.json({ success: false, error: 'Insufficient portfolio capital to place trade.' }, { status: 400 });
     }
 
     // Check duplicate submission
@@ -63,31 +72,39 @@ export async function POST(req: Request) {
       round.multiplier
     );
 
-    // Transactional position creation + participant available cash update
-    const position = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-      const pos = await tx.position.create({
-        data: {
-          participantId,
-          roundId,
-          selectedAnswer: cleanAnswer,
-          riskLevelId,
-          exposedCapital,
-          potentialWin,
-          potentialLoss,
-          status: 'LOCKED',
-        },
-      });
+    // Transactional position creation with P2002 race condition handling
+    let position;
+    try {
+      position = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        const pos = await tx.position.create({
+          data: {
+            participantId,
+            roundId,
+            selectedAnswer: cleanAnswer,
+            riskLevelId,
+            exposedCapital,
+            potentialWin,
+            potentialLoss,
+            status: 'LOCKED',
+          },
+        });
 
-      await tx.participant.update({
-        where: { id: participantId },
-        data: {
-          exposedCapital,
-          availableCash: Math.max(0, participant.currentCapital - exposedCapital),
-        },
-      });
+        await tx.participant.update({
+          where: { id: participantId },
+          data: {
+            exposedCapital,
+            availableCash: Math.max(0, participant.currentCapital - exposedCapital),
+          },
+        });
 
-      return pos;
-    });
+        return pos;
+      });
+    } catch (txErr: any) {
+      if (txErr instanceof Prisma.PrismaClientKnownRequestError && txErr.code === 'P2002') {
+        return NextResponse.json({ success: false, error: 'Position already locked for this round.' }, { status: 400 });
+      }
+      throw txErr;
+    }
 
     // Invalidate cached state for fast reactivity
     cache.invalidatePattern(`game_api_${round.gameId}`);
@@ -122,4 +139,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
 

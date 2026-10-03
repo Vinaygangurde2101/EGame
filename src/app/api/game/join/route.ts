@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { cache } from '@/lib/cache';
 import { logAuditEvent } from '@/lib/engines/audit-engine';
 import { emitGameEvent } from '@/lib/socket-emitter';
 
@@ -42,12 +43,15 @@ export async function POST(req: Request) {
         },
       });
 
-      await logAuditEvent({
+      // Clear cache for analytics & game details
+      cache.invalidatePattern(game.id);
+
+      logAuditEvent({
         gameId: game.id,
         participantId: participant.id,
         eventType: 'PLAYER_JOINED',
         metadata: { displayName, avatar },
-      });
+      }).catch((err) => console.error('Audit log error:', err));
 
       // Emit realtime event
       emitGameEvent(game.id, 'player_joined', {

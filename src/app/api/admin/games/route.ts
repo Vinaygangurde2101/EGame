@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { cache } from '@/lib/cache';
+import { invalidateQuestionPoolCache } from '@/lib/question-cache';
 
 export async function GET() {
   try {
@@ -43,8 +45,12 @@ export async function DELETE(req: Request) {
       where: { id: gameId },
     });
 
+    cache.invalidatePattern(gameId);
+    invalidateQuestionPoolCache(gameId);
+
     return NextResponse.json({ success: true, message: 'Game deleted successfully.' });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
