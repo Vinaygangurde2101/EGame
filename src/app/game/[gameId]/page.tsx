@@ -184,39 +184,18 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
 
 
 
-  const handleAutoLock = async () => {
-    if (gameId && currentRound && (gameState?.status === 'ROUND_START' || gameState?.status === 'QUESTION_LIVE' || gameState?.status === 'POSITION_SUBMISSION')) {
-      try {
-        await fetch('/api/admin/round/lock', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ gameId, roundId: currentRound.id }),
-        });
-        await fetchState();
-      } catch (e) {
-        console.error(e);
-      }
-    }
-  };
-
-  const handleStartRound = async () => {
-    setSubmitting(true);
-    try {
-      await fetch('/api/admin/round/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gameId }),
-      });
-      await fetchState();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSubmitting(false);
-    }
+  // Handle timer expiration locally without calling admin endpoints
+  const handleTimerExpire = () => {
+    setGameState((prev: any) => (prev ? { ...prev, status: 'MARKET_LOCKED' } : prev));
+    fetchState();
   };
 
   // Handle Position Submission
   const handleSubmitPosition = async () => {
+    if (gameState?.status === 'MARKET_LOCKED' || gameState?.status === 'ANSWER_REVEAL' || gameState?.status === 'SETTLEMENT') {
+      setErrorMessage('Market is currently locked for this round.');
+      return;
+    }
     if (!selectedOption) {
       setErrorMessage('Please select an option (A, B, C, or D).');
       return;
@@ -315,7 +294,7 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
                 <CountdownTimer
                   totalSeconds={activeQuestion.timerSeconds || 30}
                   startTime={currentRound.startTime}
-                  onExpire={handleAutoLock}
+                  onExpire={handleTimerExpire}
                 />
               )}
 
@@ -323,43 +302,32 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
               {gameState?.status === 'WAITING' && (
                 <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl space-y-4">
                   <div className="w-12 h-12 mx-auto rounded-2xl bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
-                    <Sparkles className="w-6 h-6 animate-pulse" />
+                    <Sparkles className="w-6 h-6 animate-pulse text-cyan-400" />
                   </div>
-                  <h3 className="font-mono text-xl font-bold text-white">MARKET WAITING ROOM</h3>
+                  <h3 className="font-mono text-xl font-bold text-white">TRADER LOBBY • WAITING ROOM</h3>
                   <p className="text-xs font-mono text-slate-400">
-                    You are connected to the live market. Click below to start Round 1 and begin trading!
+                    You are connected to the live trading server. The game host will start Round 1 shortly.
                   </p>
-                  <div className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-full text-xs font-mono text-slate-400">
+                  <div className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-full text-xs font-mono text-cyan-300">
                     PIN: {gameState?.gamePin} • Starting Capital: {formatINR(gameState?.startingCapital || 10000)}
                   </div>
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={handleStartRound}
-                      className="w-full py-4 bg-gradient-to-r from-emerald-400 via-cyan-500 to-indigo-500 hover:from-emerald-300 hover:to-indigo-400 text-slate-950 font-mono font-bold text-base rounded-2xl shadow-xl shadow-cyan-500/20 transition transform active:scale-95 flex items-center justify-center gap-2"
-                    >
-                      🚀 START ROUND 1 NOW
-                    </button>
+                  <div className="pt-2 flex items-center justify-center gap-2 text-xs font-mono text-amber-400">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    Waiting for host to initiate market...
                   </div>
                 </div>
               )}
 
               {/* FALLBACK IF QUESTION MISSING */}
               {!activeQuestion && gameState?.status !== 'WAITING' && gameState?.status !== 'GAME_FINISHED' && (
-                <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl space-y-4">
-                  <h3 className="font-mono text-lg font-bold text-white">READY FOR NEXT ROUND</h3>
+                <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl space-y-3">
+                  <div className="w-10 h-10 mx-auto rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-cyan-400">
+                    <TrendingUp className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <h3 className="font-mono text-base font-bold text-white">NEXT ROUND PREPARATION</h3>
                   <p className="text-xs font-mono text-slate-400">
-                    Click below to advance to the next market round and load the question.
+                    Host is loading the question for Round {gameState?.currentRound || 1}. Stand by...
                   </p>
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={handleStartRound}
-                    className="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-mono font-bold text-sm rounded-xl shadow-lg flex items-center justify-center gap-2"
-                  >
-                    ⚡ LOAD NEXT ROUND QUESTION
-                  </button>
                 </div>
               )}
 
@@ -424,7 +392,7 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
                 </div>
               )}
 
-              {/* REVEAL & NEXT ROUND BUTTON */}
+              {/* REVEAL & NEXT ROUND WAITING */}
               {(gameState?.status === 'ANSWER_REVEAL' || gameState?.status === 'SETTLEMENT' || gameState?.status === 'LEADERBOARD_UPDATE') && (
                 <div className="bg-slate-900/90 border border-cyan-500/50 rounded-2xl p-5 shadow-xl text-center space-y-4">
                   <span className="text-[11px] font-mono uppercase tracking-wider text-cyan-400 px-3 py-1 bg-cyan-950 rounded-full border border-cyan-500/30">
@@ -438,14 +406,10 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
                       💡 {activeQuestion.explanation}
                     </p>
                   )}
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={handleStartRound}
-                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-mono font-bold text-sm rounded-xl shadow-lg flex items-center justify-center gap-2"
-                  >
-                    NEXT ROUND ➔
-                  </button>
+                  <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-xs font-mono text-cyan-300 flex items-center justify-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                    Round settled. Waiting for host to initiate next round...
+                  </div>
                 </div>
               )}
             </section>
@@ -524,8 +488,17 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
                   <CountdownTimer
                     totalSeconds={activeQuestion.timerSeconds || 30}
                     startTime={currentRound.startTime}
-                    onExpire={handleAutoLock}
+                    onExpire={handleTimerExpire}
                   />
+                )}
+
+                {/* WAITING ROOM IN TAB VIEW */}
+                {gameState?.status === 'WAITING' && (
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl space-y-4">
+                    <Sparkles className="w-8 h-8 mx-auto text-cyan-400 animate-pulse" />
+                    <h3 className="font-mono text-lg font-bold text-white">TRADER LOBBY</h3>
+                    <p className="text-xs font-mono text-slate-400">Connected. Waiting for host to start Round 1...</p>
+                  </div>
                 )}
 
                 {!currentPosition && activeQuestion && (gameState?.status === 'ROUND_START' || gameState?.status === 'QUESTION_LIVE' || gameState?.status === 'POSITION_SUBMISSION') && (
@@ -548,9 +521,9 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
                       type="button"
                       disabled={submitting || !selectedOption}
                       onClick={handleSubmitPosition}
-                      className="w-full py-4 bg-gradient-to-r from-emerald-500 to-indigo-600 font-mono font-bold text-base rounded-2xl text-slate-950"
+                      className="w-full py-4 bg-gradient-to-r from-emerald-500 to-indigo-600 font-mono font-bold text-base rounded-2xl text-slate-950 shadow-xl flex items-center justify-center gap-2"
                     >
-                      LOCK POSITION 🔒
+                      <Lock className="w-5 h-5" /> LOCK POSITION 🔒
                     </button>
                   </div>
                 )}
@@ -584,6 +557,81 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
 
             {activeTab === 'leaderboard' && (
               <Leaderboard entries={leaderboard} currentParticipantId={participantId || undefined} />
+            )}
+
+            {activeTab === 'history' && (
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                <h3 className="font-mono text-sm font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <History className="w-4 h-4 text-cyan-400" /> Recent Market Orders
+                </h3>
+                {history.length === 0 ? (
+                  <div className="text-center py-4 text-xs font-mono text-slate-500">
+                    No market positions locked yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {history.map((item) => (
+                      <div key={item.id} className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 flex items-center justify-between text-xs font-mono">
+                        <div>
+                          <div className="font-bold text-white">
+                            Round {item.round.roundNumber.toString().padStart(2, '0')} • Option {item.selectedAnswer}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">Exposed: {formatINR(item.exposedCapital)}</div>
+                        </div>
+                        <div>
+                          {item.settlement ? (
+                            <span className={`font-bold ${item.settlement.result === 'WIN' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {item.settlement.result === 'WIN' ? `+${formatINR(item.settlement.profitLoss)}` : formatINR(item.settlement.profitLoss)}
+                            </span>
+                          ) : (
+                            <span className="text-amber-400 font-semibold">LOCKED 🔒</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'achievements' && (
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+                <h3 className="font-mono text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Award className="w-4 h-4 text-cyan-400" /> Trader Achievements & Badges
+                </h3>
+                <div className="grid grid-cols-1 gap-2.5">
+                  <AchievementBadge
+                    name="FIRST ORDER"
+                    description="Locked your first market position in the championship"
+                    iconName="Zap"
+                    earned={history.length > 0}
+                  />
+                  <AchievementBadge
+                    name="CALCULATED RISK"
+                    description="Submitted a position using HIGH or EXTREME risk leverage"
+                    iconName="Flame"
+                    earned={history.some((h) => h.riskLevel?.name === 'HIGH' || h.riskLevel?.name === 'EXTREME')}
+                  />
+                  <AchievementBadge
+                    name="CAPITAL PRESERVATION"
+                    description="Maintained positive net PnL in the current tournament"
+                    iconName="ShieldCheck"
+                    earned={(participant?.netPnL || 0) >= 0}
+                  />
+                  <AchievementBadge
+                    name="MARKET MOVER"
+                    description="Achieved top 3 rank on the live global leaderboard"
+                    iconName="TrendingUp"
+                    earned={Number(currentRank) <= 3}
+                  />
+                  <AchievementBadge
+                    name="PORTFOLIO TITAN"
+                    description="Grew starting capital by more than +25%"
+                    iconName="Gem"
+                    earned={(participant?.returnPercentage || 0) >= 25}
+                  />
+                </div>
+              </div>
             )}
           </div>
         )}
