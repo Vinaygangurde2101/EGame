@@ -406,9 +406,9 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
                       💡 {activeQuestion.explanation}
                     </p>
                   )}
-                  <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-xs font-mono text-cyan-300 flex items-center justify-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-                    Round settled. Waiting for host to initiate next round...
+                  <div className="p-3 bg-slate-950/80 rounded-xl border border-cyan-500/40 text-xs font-mono text-cyan-300 flex items-center justify-center gap-2 shadow-inner">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span>⚡ Live Automated Market Pipeline Active • Round {gameState?.currentRound} Processing</span>
                   </div>
                 </div>
               )}

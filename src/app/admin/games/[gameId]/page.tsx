@@ -32,6 +32,31 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
+  const [isAutoPilotMode, setIsAutoPilotMode] = useState(false);
+
+  const fetchAutoPilot = async () => {
+    try {
+      const res = await fetch(`/api/admin/autopilot?gameId=${gameId}`);
+      const data = await res.json();
+      if (data.success) {
+        setIsAutoPilotMode(data.isAutoPilot);
+      }
+    } catch (e) {}
+  };
+
+  const handleToggleAutoPilot = async () => {
+    const nextState = !isAutoPilotMode;
+    setIsAutoPilotMode(nextState);
+    try {
+      await fetch('/api/admin/autopilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameId, enabled: nextState }),
+      });
+    } catch (e) {
+      setIsAutoPilotMode(!nextState);
+    }
+  };
 
   const fetchState = async () => {
     try {
@@ -58,9 +83,16 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
 
   useEffect(() => {
     fetchState();
+    fetchAutoPilot();
 
     const socket = io({ transports: ['websocket', 'polling'] });
     socket.emit('join_game', { gameId, role: 'admin' });
+
+    socket.on('autopilot_toggled', (payload) => {
+      if (typeof payload?.isAutoPilot === 'boolean') {
+        setIsAutoPilotMode(payload.isAutoPilot);
+      }
+    });
 
     socket.on('game_state_changed', (payload) => {
       if (payload?.status) {
@@ -299,11 +331,28 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
 
             return (
               <div className="bg-slate-900/90 border border-cyan-500/40 rounded-3xl p-5 shadow-2xl backdrop-blur-md">
-                <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-4 border-b border-slate-800 gap-2">
                   <h2 className="font-mono text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-cyan-400" /> State-Aware Market Action Bar
                   </h2>
-                  {actionMessage && <span className="text-xs font-mono text-amber-400 animate-pulse">{actionMessage}</span>}
+
+                  <div className="flex items-center gap-3">
+                    {actionMessage && <span className="text-xs font-mono text-amber-400 animate-pulse">{actionMessage}</span>}
+
+                    <button
+                      type="button"
+                      onClick={handleToggleAutoPilot}
+                      className={`px-3 py-1.5 rounded-xl font-mono text-xs font-bold border flex items-center gap-2 transition shadow-md ${
+                        isAutoPilotMode
+                          ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/60 ring-2 ring-emerald-500/30'
+                          : 'bg-slate-950/80 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                      title="Toggle Automated Round Sequencing"
+                    >
+                      <span className={`w-2 h-2 rounded-full ${isAutoPilotMode ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}`} />
+                      {isAutoPilotMode ? '⚡ AUTO-PILOT ON (AUTOMATED)' : '🤖 AUTO-PILOT OFF (MANUAL)'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">

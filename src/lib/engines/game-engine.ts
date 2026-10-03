@@ -183,6 +183,23 @@ export async function advanceToNextRound(gameId: string) {
   return { round, question };
 }
 
+// Global Auto-Pilot state store
+const autoPilotGames = new Set<string>();
+
+export function setAutoPilot(gameId: string, enabled: boolean) {
+  if (enabled) {
+    autoPilotGames.add(gameId);
+  } else {
+    autoPilotGames.delete(gameId);
+  }
+  emitGameEvent(gameId, 'autopilot_toggled', { gameId, isAutoPilot: enabled });
+  return enabled;
+}
+
+export function isAutoPilot(gameId: string): boolean {
+  return autoPilotGames.has(gameId);
+}
+
 export async function lockMarket(gameId: string, roundId: string) {
   const round = await db.round.findUnique({
     where: { id: roundId },
@@ -208,6 +225,19 @@ export async function lockMarket(gameId: string, roundId: string) {
     roundId,
     status: 'MARKET_LOCKED',
   });
+
+  // Auto-Pilot Sequence Step 2 -> 3 (Reveal Answer after 2.5s)
+  if (isAutoPilot(round.game.id)) {
+    setTimeout(async () => {
+      try {
+        if (isAutoPilot(round.game.id)) {
+          await revealAnswer(round.game.id, roundId);
+        }
+      } catch (e) {
+        console.error('Auto-Pilot Reveal error:', e);
+      }
+    }, 2500);
+  }
 }
 
 export async function revealAnswer(gameId: string, roundId: string) {
@@ -246,6 +276,19 @@ export async function revealAnswer(gameId: string, roundId: string) {
     correctAnswer: question.correctAnswer,
     explanation: question.explanation,
   });
+
+  // Auto-Pilot Sequence Step 3 -> 4 (Settle Round after 3.5s)
+  if (isAutoPilot(round.game.id)) {
+    setTimeout(async () => {
+      try {
+        if (isAutoPilot(round.game.id)) {
+          await executeRoundSettlement(round.game.id, roundId);
+        }
+      } catch (e) {
+        console.error('Auto-Pilot Settlement error:', e);
+      }
+    }, 3500);
+  }
 }
 
 export async function executeRoundSettlement(gameId: string, roundId: string) {
@@ -274,8 +317,30 @@ export async function executeRoundSettlement(gameId: string, roundId: string) {
     leaderboard,
   });
 
+  // Auto-Pilot Sequence Step 4 -> Next Round (Advance to Next Round after 4s)
+  if (isAutoPilot(round.game.id)) {
+    setTimeout(async () => {
+      try {
+        if (isAutoPilot(round.game.id)) {
+          const currentGame = await db.game.findUnique({
+            where: { id: round.game.id },
+            select: { currentRound: true, totalRounds: true },
+          });
+          if (currentGame && currentGame.currentRound < currentGame.totalRounds) {
+            await advanceToNextRound(round.game.id);
+          } else if (currentGame && currentGame.currentRound >= currentGame.totalRounds) {
+            await transitionGameState(round.game.id, 'GAME_FINISHED');
+          }
+        }
+      } catch (e) {
+        console.error('Auto-Pilot Next Round error:', e);
+      }
+    }, 4000);
+  }
+
   return { summary, leaderboard };
 }
+
 
 
 
