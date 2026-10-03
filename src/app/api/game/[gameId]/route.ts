@@ -4,6 +4,8 @@ import { cache } from '@/lib/cache';
 import { getGameLeaderboard } from '@/lib/engines/leaderboard-engine';
 import { getQuestionForRoundFromPool } from '@/lib/question-cache';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request, { params }: { params: { gameId: string } }) {
   try {
     const { gameId } = params;

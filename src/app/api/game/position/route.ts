@@ -6,6 +6,8 @@ import { calculateRiskExposure } from '@/lib/engines/risk-engine';
 import { logAuditEvent } from '@/lib/engines/audit-engine';
 import { emitGameEvent } from '@/lib/socket-emitter';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();

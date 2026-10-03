@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+
+export const dynamic = 'force-dynamic';
 import { cache } from '@/lib/cache';
 
 export async function GET(req: Request, { params }: { params: { gameId: string } }) {

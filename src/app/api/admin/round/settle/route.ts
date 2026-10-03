@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { executeRoundSettlement } from '@/lib/engines/game-engine';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();

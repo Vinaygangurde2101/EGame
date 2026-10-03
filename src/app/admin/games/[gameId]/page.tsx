@@ -208,6 +208,43 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
         <Navbar gamePin={gameState?.gamePin} gameId={gameId} role="admin" />
 
         <main className="max-w-7xl w-full mx-auto px-4 py-6 flex-1 space-y-6">
+          {/* HEADER BAR WITH GAME NAME & DANGER ZONE */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-cyan-950/80 border border-cyan-500/40 rounded-full text-xs font-mono font-bold text-cyan-300 mb-1">
+                <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" /> Admin Control Room
+              </div>
+              <h1 className="text-xl sm:text-2xl font-mono font-bold text-white tracking-tight flex items-center gap-3">
+                {gameState?.name || 'Loading Game...'}
+                {gameState?.gamePin && (
+                  <span className="text-xs font-mono px-2.5 py-1 bg-slate-900 border border-slate-700 text-slate-300 rounded-lg">
+                    PIN: {gameState.gamePin}
+                  </span>
+                )}
+              </h1>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <a
+                href={`/arena/${gameId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-400 font-mono font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow-md"
+              >
+                <Tv className="w-4 h-4 text-emerald-400" /> ARENA TV
+              </a>
+
+              <button
+                type="button"
+                onClick={handleDeleteGame}
+                className="py-2 px-3 bg-rose-950/80 hover:bg-rose-900 border border-rose-500/40 text-rose-300 font-mono font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow-md"
+                title="Delete this championship game"
+              >
+                <Trash2 className="w-4 h-4 text-rose-400" /> DELETE GAME
+              </button>
+            </div>
+          </div>
+
           {/* STATS HEADER BAR */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
             <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg">
@@ -251,80 +288,99 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
             </div>
           </div>
 
-          {/* ADMIN ACTION CONTROL BAR */}
-          <div className="bg-slate-900/90 border border-cyan-500/40 rounded-3xl p-5 shadow-2xl backdrop-blur-md">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
-              <h2 className="font-mono text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-cyan-400" /> Authoritative Market Action Bar
-              </h2>
-              {actionMessage && <span className="text-xs font-mono text-amber-400 animate-pulse">{actionMessage}</span>}
-            </div>
+          {/* AUTHORITATIVE MARKET ACTION CONTROL BAR */}
+          {(() => {
+            const status = gameState?.status || 'LOADING';
+            const isWaitingOrSettled = ['WAITING', 'SETTLEMENT', 'LEADERBOARD_UPDATE'].includes(status);
+            const isMarketLive = ['ROUND_START', 'QUESTION_LIVE', 'POSITION_SUBMISSION'].includes(status);
+            const isMarketLocked = status === 'MARKET_LOCKED';
+            const isAnswerRevealed = status === 'ANSWER_REVEAL';
+            const step1Label = status === 'WAITING' ? '1. START ROUND' : '1. NEXT ROUND';
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={handleStartRound}
-                className="py-3 px-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-              >
-                <Play className="w-4 h-4 fill-slate-950" /> 1. START ROUND
-              </button>
+            return (
+              <div className="bg-slate-900/90 border border-cyan-500/40 rounded-3xl p-5 shadow-2xl backdrop-blur-md">
+                <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+                  <h2 className="font-mono text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-cyan-400" /> State-Aware Market Action Bar
+                  </h2>
+                  {actionMessage && <span className="text-xs font-mono text-amber-400 animate-pulse">{actionMessage}</span>}
+                </div>
 
-              <button
-                type="button"
-                disabled={loading || !currentRound}
-                onClick={handleLockMarket}
-                className="py-3 px-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-              >
-                <Lock className="w-4 h-4" /> 2. CLOSE MARKET
-              </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                  {/* STEP 1: START / NEXT ROUND */}
+                  <button
+                    type="button"
+                    disabled={loading || !isWaitingOrSettled}
+                    onClick={handleStartRound}
+                    className={`py-3.5 px-4 font-mono font-bold text-xs rounded-2xl shadow-lg flex items-center justify-center gap-2 transition border ${
+                      isWaitingOrSettled
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 border-emerald-400 ring-2 ring-emerald-500/30'
+                        : 'bg-slate-950/60 text-slate-600 border-slate-800 opacity-40 cursor-not-allowed'
+                    }`}
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>{step1Label}</span>
+                  </button>
 
-              <button
-                type="button"
-                disabled={loading || !currentRound}
-                onClick={handleRevealAnswer}
-                className="py-3 px-3 bg-cyan-600 hover:bg-cyan-500 text-white font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-              >
-                <Eye className="w-4 h-4" /> 3. REVEAL ANSWER
-              </button>
+                  {/* STEP 2: CLOSE MARKET */}
+                  <button
+                    type="button"
+                    disabled={loading || !currentRound || !isMarketLive}
+                    onClick={handleLockMarket}
+                    className={`py-3.5 px-4 font-mono font-bold text-xs rounded-2xl shadow-lg flex items-center justify-center gap-2 transition border ${
+                      isMarketLive
+                        ? 'bg-amber-600 hover:bg-amber-500 text-slate-950 border-amber-400 ring-2 ring-amber-500/30'
+                        : 'bg-slate-950/60 text-slate-600 border-slate-800 opacity-40 cursor-not-allowed'
+                    }`}
+                  >
+                    <Lock className="w-4 h-4" />
+                    <span>2. CLOSE MARKET</span>
+                  </button>
 
-              <button
-                type="button"
-                disabled={loading || !currentRound}
-                onClick={handleSettleRound}
-                className="py-3 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-              >
-                <CheckCircle2 className="w-4 h-4" /> 4. SETTLE ROUND
-              </button>
+                  {/* STEP 3: REVEAL ANSWER */}
+                  <button
+                    type="button"
+                    disabled={loading || !currentRound || !isMarketLocked}
+                    onClick={handleRevealAnswer}
+                    className={`py-3.5 px-4 font-mono font-bold text-xs rounded-2xl shadow-lg flex items-center justify-center gap-2 transition border ${
+                      isMarketLocked
+                        ? 'bg-cyan-600 hover:bg-cyan-500 text-white border-cyan-400 ring-2 ring-cyan-500/30'
+                        : 'bg-slate-950/60 text-slate-600 border-slate-800 opacity-40 cursor-not-allowed'
+                    }`}
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>3. REVEAL ANSWER</span>
+                  </button>
 
-              <button
-                type="button"
-                disabled={loading}
-                onClick={handleStartRound}
-                className="py-3 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono font-bold text-xs rounded-xl border border-slate-700 flex items-center justify-center gap-1.5 transition"
-              >
-                <ArrowRight className="w-4 h-4 text-cyan-400" /> NEXT ROUND
-              </button>
+                  {/* STEP 4: SETTLE ROUND */}
+                  <button
+                    type="button"
+                    disabled={loading || !currentRound || !isAnswerRevealed}
+                    onClick={handleSettleRound}
+                    className={`py-3.5 px-4 font-mono font-bold text-xs rounded-2xl shadow-lg flex items-center justify-center gap-2 transition border ${
+                      isAnswerRevealed
+                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-400 ring-2 ring-indigo-500/30'
+                        : 'bg-slate-950/60 text-slate-600 border-slate-800 opacity-40 cursor-not-allowed'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>4. SETTLE ROUND</span>
+                  </button>
 
-              <a
-                href={`/arena/${gameId}`}
-                target="_blank"
-                rel="noreferrer"
-                className="py-3 px-3 bg-slate-950 hover:bg-slate-900 border border-slate-700 text-cyan-400 font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition"
-              >
-                <Tv className="w-4 h-4" /> ARENA TV
-              </a>
-
-              <button
-                type="button"
-                onClick={handleDeleteGame}
-                className="py-3 px-3 bg-rose-950/90 hover:bg-rose-900 border border-rose-500/50 text-rose-300 font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition"
-                title="Delete this championship game"
-              >
-                <Trash2 className="w-4 h-4 text-rose-400" /> DELETE GAME
-              </button>
-            </div>
-          </div>
+                  {/* STEP 5: ARENA TV */}
+                  <a
+                    href={`/arena/${gameId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-3.5 px-4 bg-slate-950 hover:bg-slate-900 border border-slate-700 text-cyan-400 font-mono font-bold text-xs rounded-2xl flex items-center justify-center gap-2 transition shadow-md"
+                  >
+                    <Tv className="w-4 h-4 text-emerald-400" />
+                    <span>ARENA TV BROADCAST</span>
+                  </a>
+                </div>
+              </div>
+            );
+          })()}
 
         {/* ACTIVE QUESTION & ANALYTICS BREAKDOWN */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

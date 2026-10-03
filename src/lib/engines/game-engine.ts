@@ -75,6 +75,11 @@ export async function advanceToNextRound(gameId: string) {
 
   if (!game) throw new Error('Game not found');
 
+  const activeMarketStatuses = ['ROUND_START', 'QUESTION_LIVE', 'POSITION_SUBMISSION', 'MARKET_LOCKED', 'ANSWER_REVEAL'];
+  if (activeMarketStatuses.includes(game.status)) {
+    throw new Error('Cannot advance round while a market is currently active or pending settlement.');
+  }
+
   const nextRoundNumber = game.currentRound + 1;
 
   if (nextRoundNumber > questions.length || nextRoundNumber > game.totalRounds) {
@@ -181,10 +186,14 @@ export async function advanceToNextRound(gameId: string) {
 export async function lockMarket(gameId: string, roundId: string) {
   const round = await db.round.findUnique({
     where: { id: roundId },
-    include: { game: { select: { id: true, gamePin: true } } },
+    include: { game: { select: { id: true, gamePin: true, status: true } } },
   });
 
   if (!round) throw new Error('Round missing');
+
+  if (round.status === 'LOCKED' || round.status === 'SETTLED' || round.game.status === 'MARKET_LOCKED') {
+    return; // Already locked or settled
+  }
 
   await db.round.update({
     where: { id: roundId },
@@ -204,10 +213,14 @@ export async function lockMarket(gameId: string, roundId: string) {
 export async function revealAnswer(gameId: string, roundId: string) {
   const round = await db.round.findUnique({
     where: { id: roundId },
-    select: { id: true, questionId: true, gameId: true, game: { select: { id: true, gamePin: true } } },
+    select: { id: true, questionId: true, gameId: true, status: true, game: { select: { id: true, gamePin: true, status: true } } },
   });
 
   if (!round) throw new Error('Round missing');
+
+  if (round.game.status !== 'MARKET_LOCKED' && round.status !== 'LOCKED') {
+    throw new Error('Cannot reveal answer until market is closed and locked.');
+  }
 
   const question = round.questionId
     ? await getQuestionByIdFromPool(round.gameId, round.questionId)
@@ -238,10 +251,14 @@ export async function revealAnswer(gameId: string, roundId: string) {
 export async function executeRoundSettlement(gameId: string, roundId: string) {
   const round = await db.round.findUnique({
     where: { id: roundId },
-    select: { gameId: true, game: { select: { id: true, gamePin: true } } },
+    select: { gameId: true, status: true, game: { select: { id: true, gamePin: true, status: true } } },
   });
 
   if (!round) throw new Error('Round not found');
+
+  if (round.game.status !== 'ANSWER_REVEAL' && round.status !== 'REVEALED') {
+    throw new Error('Cannot execute settlement until answer has been revealed.');
+  }
 
   const summary = await settleRound(round.game.id, roundId);
   const leaderboard = await getGameLeaderboard(round.game.id);
@@ -259,6 +276,7 @@ export async function executeRoundSettlement(gameId: string, roundId: string) {
 
   return { summary, leaderboard };
 }
+
 
 
 

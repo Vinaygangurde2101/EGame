@@ -4,6 +4,8 @@ import { logAuditEvent } from '@/lib/engines/audit-engine';
 import { DEFAULT_RISK_LEVELS } from '@/lib/engines/risk-engine';
 import { ensureGameQuestionsExist } from '@/lib/engines/question-defaults';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();

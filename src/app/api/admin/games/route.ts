@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { cache } from '@/lib/cache';
 import { invalidateQuestionPoolCache } from '@/lib/question-cache';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const games = await db.game.findMany({
