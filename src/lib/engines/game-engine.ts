@@ -132,13 +132,18 @@ export async function advanceToNextRound(gameId: string) {
   // Invalidate in-memory cache
   cache.invalidatePattern(gameId);
 
-  // Emit round start event
+  // Sanitize question for broadcast
+  const { correctAnswer: _, ...safeQuestionPayload } = question;
+
+  // Emit round start event with rich realtime payload
   emitGameEvent(gameId, 'round_started', {
     gameId,
+    status: 'ROUND_START',
     roundNumber: nextRoundNumber,
     roundType,
     multiplier,
-    questionId: question.id,
+    currentRound: round,
+    activeQuestion: safeQuestionPayload,
     timerSeconds: question.timerSeconds,
     startTime: round.startTime,
   });
@@ -171,7 +176,11 @@ export async function lockMarket(gameId: string, roundId: string) {
 
   await transitionGameState(gameId, 'MARKET_LOCKED');
 
-  emitGameEvent(gameId, 'market_locked', { gameId, roundId });
+  emitGameEvent(gameId, 'market_locked', {
+    gameId,
+    roundId,
+    status: 'MARKET_LOCKED',
+  });
 }
 
 export async function revealAnswer(gameId: string, roundId: string) {
@@ -201,6 +210,7 @@ export async function revealAnswer(gameId: string, roundId: string) {
   emitGameEvent(gameId, 'answer_revealed', {
     gameId,
     roundId,
+    status: 'ANSWER_REVEAL',
     correctAnswer: question.correctAnswer,
     explanation: question.explanation,
   });
@@ -215,11 +225,13 @@ export async function executeRoundSettlement(gameId: string, roundId: string) {
   emitGameEvent(gameId, 'settlement_completed', {
     gameId,
     roundId,
+    status: 'LEADERBOARD_UPDATE',
     summary,
     leaderboard,
   });
 
   return { summary, leaderboard };
 }
+
 
 

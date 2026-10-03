@@ -34,12 +34,45 @@ export default function ArenaPage({ params }: { params: { gameId: string } }) {
     const socket = io();
     socket.emit('join_game', { gameId, role: 'arena' });
 
-    socket.on('game_state_changed', () => fetchState());
-    socket.on('round_started', () => fetchState());
-    socket.on('market_locked', () => fetchState());
-    socket.on('answer_revealed', () => fetchState());
+    socket.on('game_state_changed', (payload: any) => {
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status, currentRound: payload.currentRound ?? prev.currentRound } : prev);
+      }
+      fetchState();
+    });
+
+    socket.on('round_started', (payload: any) => {
+      if (payload?.currentRound) setCurrentRound(payload.currentRound);
+      if (payload?.activeQuestion) setActiveQuestion(payload.activeQuestion);
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status, currentRound: payload.roundNumber } : prev);
+      }
+      fetchState();
+    });
+
+    socket.on('market_locked', (payload: any) => {
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      }
+      fetchState();
+    });
+
+    socket.on('answer_revealed', (payload: any) => {
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      }
+      if (payload?.correctAnswer) {
+        setActiveQuestion((prev: any) => prev ? { ...prev, correctAnswer: payload.correctAnswer, explanation: payload.explanation } : prev);
+      }
+      fetchState();
+    });
+
     socket.on('settlement_completed', (payload: any) => {
-      setSummary(payload.summary);
+      if (payload?.summary) setSummary(payload.summary);
+      if (payload?.leaderboard) setLeaderboard(payload.leaderboard);
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      }
       fetchState();
     });
 
@@ -47,6 +80,7 @@ export default function ArenaPage({ params }: { params: { gameId: string } }) {
       socket.disconnect();
     };
   }, [gameId]);
+
 
   return (
     <ArenaDisplay

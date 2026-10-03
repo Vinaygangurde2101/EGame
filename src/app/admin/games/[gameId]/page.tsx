@@ -62,7 +62,36 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
     const socket = io();
     socket.emit('join_game', { gameId, role: 'admin' });
 
-    socket.on('game_state_changed', () => fetchState());
+    socket.on('game_state_changed', (payload) => {
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status, currentRound: payload.currentRound ?? prev.currentRound } : prev);
+      }
+      fetchState();
+    });
+
+    socket.on('round_started', (payload) => {
+      if (payload?.currentRound) setCurrentRound(payload.currentRound);
+      if (payload?.activeQuestion) setActiveQuestion(payload.activeQuestion);
+      if (payload?.status) setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      fetchState();
+    });
+
+    socket.on('market_locked', (payload) => {
+      if (payload?.status) setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      fetchState();
+    });
+
+    socket.on('answer_revealed', (payload) => {
+      if (payload?.status) setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      fetchState();
+    });
+
+    socket.on('settlement_completed', (payload) => {
+      if (payload?.status) setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      if (payload?.leaderboard) setLeaderboard(payload.leaderboard);
+      fetchState();
+    });
+
     socket.on('player_joined', () => fetchState());
     socket.on('position_submitted', () => fetchState());
 
@@ -71,7 +100,7 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
     };
   }, [gameId]);
 
-  // Admin Actions
+  // Admin Actions with Instant Optimistic UI Feedback
   const handleStartRound = async () => {
     setLoading(true);
     setActionMessage('Advancing to next round...');
@@ -81,6 +110,12 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gameId }),
       });
+      const data = await res.json();
+      if (data.success && data.result) {
+        if (data.result.round) setCurrentRound(data.result.round);
+        if (data.result.question) setActiveQuestion(data.result.question);
+        setGameState((prev: any) => prev ? { ...prev, status: 'ROUND_START', currentRound: data.result.round?.roundNumber || prev.currentRound } : prev);
+      }
       await fetchState();
     } catch (e: any) {
       alert(e.message);
@@ -94,6 +129,7 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
     if (!currentRound) return;
     setLoading(true);
     try {
+      setGameState((prev: any) => prev ? { ...prev, status: 'MARKET_LOCKED' } : prev);
       await fetch('/api/admin/round/lock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -111,6 +147,7 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
     if (!currentRound) return;
     setLoading(true);
     try {
+      setGameState((prev: any) => prev ? { ...prev, status: 'ANSWER_REVEAL' } : prev);
       await fetch('/api/admin/round/reveal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -128,11 +165,16 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
     if (!currentRound) return;
     setLoading(true);
     try {
-      await fetch('/api/admin/round/settle', {
+      setGameState((prev: any) => prev ? { ...prev, status: 'LEADERBOARD_UPDATE' } : prev);
+      const res = await fetch('/api/admin/round/settle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gameId, roundId: currentRound.id }),
       });
+      const data = await res.json();
+      if (data.success && data.leaderboard) {
+        setLeaderboard(data.leaderboard);
+      }
       await fetchState();
     } catch (e: any) {
       alert(e.message);
@@ -140,6 +182,7 @@ export default function AdminControlRoomPage({ params }: { params: { gameId: str
       setLoading(false);
     }
   };
+
 
   const handleDeleteGame = async () => {
     if (!window.confirm(`Are you sure you want to delete "${gameState?.name || 'this game'}"? All player positions and trade history will be permanently deleted.`)) {

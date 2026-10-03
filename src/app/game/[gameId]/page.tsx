@@ -118,19 +118,54 @@ function PlayerGameContent({ gameId }: { gameId: string }) {
       role: 'player',
     });
 
-    socket.on('game_state_changed', () => fetchState());
-    socket.on('round_started', () => {
-      setSelectedOption('');
+    socket.on('game_state_changed', (payload) => {
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status, currentRound: payload.currentRound ?? prev.currentRound } : prev);
+      }
       fetchState();
     });
-    socket.on('market_locked', () => fetchState());
-    socket.on('answer_revealed', () => fetchState());
-    socket.on('settlement_completed', () => fetchState());
+
+    socket.on('round_started', (payload) => {
+      setSelectedOption('');
+      setCurrentPosition(null);
+      if (payload?.currentRound) setCurrentRound(payload.currentRound);
+      if (payload?.activeQuestion) setActiveQuestion(payload.activeQuestion);
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status, currentRound: payload.roundNumber } : prev);
+      }
+      fetchState();
+    });
+
+    socket.on('market_locked', (payload) => {
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      }
+      fetchState();
+    });
+
+    socket.on('answer_revealed', (payload) => {
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      }
+      if (payload?.correctAnswer) {
+        setActiveQuestion((prev: any) => prev ? { ...prev, correctAnswer: payload.correctAnswer, explanation: payload.explanation } : prev);
+      }
+      fetchState();
+    });
+
+    socket.on('settlement_completed', (payload) => {
+      if (payload?.status) {
+        setGameState((prev: any) => prev ? { ...prev, status: payload.status } : prev);
+      }
+      if (payload?.leaderboard) setLeaderboard(payload.leaderboard);
+      fetchState();
+    });
 
     return () => {
       socket.disconnect();
     };
   }, [gameId, participantId]);
+
 
 
   const handleAutoLock = async () => {
